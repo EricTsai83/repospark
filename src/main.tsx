@@ -6,20 +6,23 @@ import { ConvexProviderWithAuthKit } from './ConvexProviderWithAuthKit';
 import './index.css';
 import App from './App.tsx';
 import { ErrorBoundary } from './ErrorBoundary.tsx';
+import { ThemeProvider } from './components/theme-provider';
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <AuthKitProvider
-        clientId={import.meta.env.VITE_WORKOS_CLIENT_ID}
-        redirectUri={import.meta.env.VITE_WORKOS_REDIRECT_URI}
-      >
-        <ConvexProviderWithAuthKit client={convex} useAuth={useAuth}>
-          <App />
-        </ConvexProviderWithAuthKit>
-      </AuthKitProvider>
+      <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
+        <AuthKitProvider
+          clientId={import.meta.env.VITE_WORKOS_CLIENT_ID}
+          redirectUri={import.meta.env.VITE_WORKOS_REDIRECT_URI}
+        >
+          <ConvexProviderWithAuthKit client={convex} useAuth={useAuth}>
+            <App />
+          </ConvexProviderWithAuthKit>
+        </AuthKitProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,
 );

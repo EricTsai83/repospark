@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh api *)",
+      "Bash(bunx tsc *)",
+      "Bash(bunx --bun shadcn@latest add dropdown-menu button --yes)",
+      "Bash(bunx --bun shadcn@latest add dropdown-menu button --yes --overwrite)",
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)"
+    ]
+  }
+}
