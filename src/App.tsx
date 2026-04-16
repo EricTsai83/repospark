@@ -300,7 +300,10 @@ function WorkspaceApp() {
 
               <div className="mt-5 grid gap-3 md:grid-cols-3">
                 <MetricCard label="Languages" value={workspace.repository.detectedLanguages.join(', ') || 'Unknown'} />
-                <MetricCard label="Package managers" value={workspace.repository.packageManagers.join(', ') || 'Unknown'} />
+                <MetricCard
+                  label="Package managers"
+                  value={workspace.repository.packageManagers.join(', ') || 'Unknown'}
+                />
                 <MetricCard label="Entrypoints" value={workspace.repository.entrypoints.join(', ') || 'Not detected'} />
               </div>
             </section>
@@ -340,7 +343,9 @@ function WorkspaceApp() {
                       <button
                         key={thread._id}
                         className={`rounded-full border px-3 py-1.5 text-xs ${
-                          selectedThreadId === thread._id ? 'border-foreground bg-muted text-foreground' : 'border-border'
+                          selectedThreadId === thread._id
+                            ? 'border-foreground bg-muted text-foreground'
+                            : 'border-border'
                         }`}
                         onClick={() => setSelectedThreadId(thread._id)}
                       >
@@ -349,11 +354,13 @@ function WorkspaceApp() {
                     ))}
                   </div>
 
-                  <div className="h-[28rem] space-y-3 overflow-y-auto rounded-2xl border border-border bg-background p-3">
+                  <div className="h-112 space-y-3 overflow-y-auto rounded-2xl border border-border bg-background p-3">
                     {messages === undefined ? (
                       <p className="text-sm text-muted-foreground">載入對話中...</p>
                     ) : messages.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">先問一個問題，例如「這個專案的主要模組怎麼分層？」</p>
+                      <p className="text-sm text-muted-foreground">
+                        先問一個問題，例如「這個專案的主要模組怎麼分層？」
+                      </p>
                     ) : (
                       messages.map((message) => <MessageBubble key={message._id} message={message} />)
                     )}
@@ -401,7 +408,9 @@ function WorkspaceApp() {
                   <h3 className="mt-1 text-base font-semibold">分析產物</h3>
                   <div className="mt-3 space-y-2">
                     {artifacts.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">匯入完成後會在這裡顯示 manifest、README 與架構摘要。</p>
+                      <p className="text-sm text-muted-foreground">
+                        匯入完成後會在這裡顯示 manifest、README 與架構摘要。
+                      </p>
                     ) : (
                       artifacts.map((artifact) => (
                         <article key={artifact._id} className="rounded-xl border border-border bg-background p-3">
@@ -482,7 +491,8 @@ function EmptyWorkspace() {
     <section className="rounded-2xl border border-dashed border-border bg-card p-8">
       <h2 className="text-xl font-semibold">準備好匯入第一個 repository</h2>
       <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-        左側輸入 GitHub repo URL 後，系統會建立 Convex 工作記錄、啟動 Daytona sandbox、clone 原始碼，並產生第一批 manifest 與 architecture artifact。
+        左側輸入 GitHub repo URL 後，系統會建立 Convex 工作記錄、啟動 Daytona sandbox、clone 原始碼，並產生第一批
+        manifest 與 architecture artifact。
       </p>
     </section>
   );
@@ -501,7 +511,9 @@ function MessageBubble({ message }: { message: Doc<'messages'> }) {
   return (
     <article
       className={`rounded-2xl border p-3 ${
-        message.role === 'user' ? 'ml-10 border-foreground bg-foreground text-background' : 'mr-10 border-border bg-card'
+        message.role === 'user'
+          ? 'ml-10 border-foreground bg-foreground text-background'
+          : 'mr-10 border-border bg-card'
       }`}
     >
       <div className="mb-2 flex items-center justify-between gap-3">
