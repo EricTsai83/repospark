@@ -6,7 +6,10 @@
       "Bash(bunx --bun shadcn@latest add dropdown-menu button --yes)",
       "Bash(bunx --bun shadcn@latest add dropdown-menu button --yes --overwrite)",
       "Bash(npx tsc *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(npx eslint *)",
+      "Bash(git stash *)"
     ]
   }
 }

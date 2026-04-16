@@ -1,5 +1,6 @@
 import { Moon, Sun } from '@phosphor-icons/react';
 
+import { Button } from '@/components/ui/button';
 import { useTheme } from '@/components/theme-provider';
 
 export function ModeToggle() {
@@ -9,15 +10,15 @@ export function ModeToggle() {
     (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
   return (
-    <button
+    <Button
       aria-label="Toggle theme"
-      className="bc-iconBtn"
+      variant="secondary"
+      size="icon"
       onClick={() => setTheme(isDark ? 'light' : 'dark')}
       title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      type="button"
     >
-      {isDark ? <Sun className="h-[1.1rem] w-[1.1rem]" weight="bold" /> : <Moon className="h-[1.1rem] w-[1.1rem]" weight="bold" />}
+      {isDark ? <Sun weight="bold" /> : <Moon weight="bold" />}
       <span className="sr-only">Toggle theme</span>
-    </button>
+    </Button>
   );
 }

@@ -1,41 +1,62 @@
+/* eslint-disable react-refresh/only-export-components */
 import * as React from 'react';
+import { Slot } from 'radix-ui';
+import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
-type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'default' | 'outline' | 'ghost' | 'destructive';
-  size?: 'default' | 'sm' | 'lg';
-};
+const buttonVariants = cva(
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0',
+  {
+    variants: {
+      variant: {
+        default:
+          'bg-primary text-primary-foreground border border-primary hover:bg-[color-mix(in_oklab,hsl(var(--bc-accent))_90%,black)]',
+        secondary:
+          'bg-card text-foreground border border-border hover:bg-muted hover:border-foreground',
+        outline:
+          'bg-transparent text-foreground border border-border hover:bg-muted hover:border-foreground',
+        ghost:
+          'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground border border-transparent',
+        destructive:
+          'bg-destructive text-white border border-destructive hover:opacity-90',
+        link: 'text-primary underline-offset-4 hover:underline',
+      },
+      size: {
+        default: 'h-10 px-4 text-sm [&_svg]:size-4',
+        sm: 'h-8 px-3 text-xs [&_svg]:size-3.5',
+        xs: 'h-7 px-2.5 text-xs [&_svg]:size-3',
+        lg: 'h-11 px-5 text-sm [&_svg]:size-4',
+        icon: 'h-9 w-9 [&_svg]:size-[1.1rem]',
+      },
+    },
+    defaultVariants: {
+      variant: 'secondary',
+      size: 'default',
+    },
+  },
+);
 
-const variantClasses: Record<NonNullable<ButtonProps['variant']>, string> = {
-  default: 'bg-foreground text-background hover:opacity-90',
-  outline: 'border border-border bg-background text-foreground hover:bg-muted',
-  ghost: 'bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground',
-  destructive: 'bg-destructive text-white hover:opacity-90',
-};
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> &
+  VariantProps<typeof buttonVariants> & {
+    asChild?: boolean;
+  };
 
-const sizeClasses: Record<NonNullable<ButtonProps['size']>, string> = {
-  default: 'h-10 px-4 text-sm',
-  sm: 'h-8 px-3 text-xs',
-  lg: 'h-11 px-5 text-sm',
-};
-
-export function Button({
+function Button({
   className,
-  variant = 'default',
-  size = 'default',
+  variant,
+  size,
   type = 'button',
+  asChild = false,
   ...props
 }: ButtonProps) {
+  const Comp = asChild ? Slot.Root : 'button';
   return (
-    <button
-      type={type}
-      className={cn(
-        'inline-flex items-center justify-center rounded-xl font-medium transition disabled:cursor-not-allowed disabled:opacity-50',
-        variantClasses[variant],
-        sizeClasses[size],
-        className,
-      )}
+    <Comp
+      type={asChild ? undefined : type}
+      className={cn(buttonVariants({ variant, size, className }))}
       {...props}
     />
   );
 }
+
+export { Button, buttonVariants };

@@ -1,19 +1,71 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
 import { Authenticated, Unauthenticated, useMutation, useQuery } from 'convex/react';
-import { GithubLogo, Plus, Robot, MagnifyingGlass } from '@phosphor-icons/react';
+import {
+  GithubLogo,
+  Plus,
+  Robot,
+  MagnifyingGlass,
+  DotsThreeVertical,
+  Broom,
+  Sparkle,
+  PaperPlaneTilt,
+} from '@phosphor-icons/react';
 import { api } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
 import { ModeToggle } from './components/mode-toggle';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DialogClose,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from '@/components/ui/sidebar';
+import { cn } from '@/lib/utils';
 
 type RepositoryId = Id<'repositories'>;
 type ThreadId = Id<'threads'>;
 
 export default function App() {
   return (
-    <div className="bc-appBg flex h-dvh overflow-hidden">
+    <div className="flex h-dvh overflow-hidden bg-background">
       <Authenticated>
-        <WorkspaceShell />
+        <SidebarProvider>
+          <WorkspaceShell />
+        </SidebarProvider>
       </Authenticated>
       <Unauthenticated>
         <SignedOutShell />
@@ -24,7 +76,6 @@ export default function App() {
 
 function WorkspaceShell() {
   const repositories = useQuery(api.repositories.listRepositories);
-  const createRepositoryImport = useMutation(api.repositories.createRepositoryImport);
   const requestDeepAnalysis = useMutation(api.analysis.requestDeepAnalysis);
   const sendMessage = useMutation(api.chat.sendMessage);
   const createThread = useMutation(api.chat.createThread);
@@ -32,10 +83,6 @@ function WorkspaceShell() {
 
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<RepositoryId | null>(null);
   const [selectedThreadId, setSelectedThreadId] = useState<ThreadId | null>(null);
-  const [importUrl, setImportUrl] = useState('');
-  const [branch, setBranch] = useState('');
-  const [importError, setImportError] = useState<string | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
   const [analysisPrompt, setAnalysisPrompt] = useState(
     'Summarize the main modules, data flow, and risk areas for this repository.',
   );
@@ -92,28 +139,6 @@ function WorkspaceShell() {
     );
   }, [repoSearch, repositories]);
 
-  async function handleImport(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setImportError(null);
-    setIsImporting(true);
-    try {
-      const result = await createRepositoryImport({
-        url: importUrl,
-        branch: branch.trim() || undefined,
-      });
-      setImportUrl('');
-      setBranch('');
-      setSelectedRepositoryId(result.repositoryId);
-      if (result.defaultThreadId) {
-        setSelectedThreadId(result.defaultThreadId);
-      }
-    } catch (error) {
-      setImportError(error instanceof Error ? error.message : 'Import failed.');
-    } finally {
-      setIsImporting(false);
-    }
-  }
-
   async function handleSendMessage(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!selectedThreadId || !chatInput.trim()) return;
@@ -169,75 +194,45 @@ function WorkspaceShell() {
 
   return (
     <>
-      <aside className="bc-sidebar w-72 shrink-0 hidden lg:block">
-        <div className="bc-sidebar-inner">
-          <div className="bc-sidebar-section">
-            <div className="bc-chip w-full justify-start">
-              <div className="bc-logoMark h-9 w-9">
-                <Robot size={16} weight="bold" />
-              </div>
-              <div className="min-w-0 leading-tight">
-                <div className="bc-title text-sm">Architect Agent</div>
-                <div className="bc-subtitle text-[11px]">Grounded codebase answers</div>
-              </div>
+      <Sidebar>
+        <SidebarHeader>
+          <LogoMark size="sm" />
+          <div className="min-w-0 leading-tight">
+            <div className="truncate text-sm font-semibold tracking-tight">Architect Agent</div>
+            <div className="truncate text-[11px] text-muted-foreground">
+              Grounded codebase answers
             </div>
           </div>
+        </SidebarHeader>
 
-          <div className="bc-sidebar-section">
-            <div className="px-1 pb-2 text-[10px] font-semibold uppercase tracking-wider opacity-60">
-              Import
-            </div>
-            <form
-              className="flex flex-col gap-2"
-              onSubmit={(e) => {
-                void handleImport(e);
-              }}
-            >
-              <input
-                value={importUrl}
-                onChange={(e) => setImportUrl(e.target.value)}
-                placeholder="https://github.com/owner/repo"
-                className="bc-input text-xs"
-              />
-              <input
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                placeholder="branch (optional)"
-                className="bc-input text-xs"
-              />
-              <button
-                type="submit"
-                className="bc-btn bc-btn-primary w-full py-1.5 text-xs"
-                disabled={isImporting || !importUrl.trim()}
-              >
-                <Plus size={14} weight="bold" />
-                {isImporting ? 'Queuing import…' : 'Import repository'}
-              </button>
-              {importError ? (
-                <p className="text-xs text-[hsl(var(--bc-error))]">{importError}</p>
-              ) : null}
-            </form>
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <div className="flex flex-1 items-center gap-2 border border-border bg-card px-2.5 py-1.5">
+            <MagnifyingGlass size={14} className="shrink-0 text-muted-foreground" weight="bold" />
+            <input
+              value={repoSearch}
+              onChange={(e) => setRepoSearch(e.target.value)}
+              placeholder="Search…"
+              className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+            />
           </div>
+          <ImportRepoDialog
+            onImported={(repoId, threadId) => {
+              setSelectedRepositoryId(repoId);
+              if (threadId) setSelectedThreadId(threadId);
+            }}
+          />
+        </div>
 
-          <div className="bc-sidebar-section">
-            <div className="bc-sidebar-search">
-              <MagnifyingGlass size={14} className="bc-muted shrink-0" weight="bold" />
-              <input
-                value={repoSearch}
-                onChange={(e) => setRepoSearch(e.target.value)}
-                placeholder="Search repositories…"
-                className="bc-sidebar-search-input outline-none"
-              />
-            </div>
-          </div>
-
-          <div className="bc-thread-list" aria-live="polite">
+        <SidebarContent>
+          <div className="flex flex-col gap-1 p-3" aria-live="polite">
             {repositories === undefined ? (
-              <div className="px-3 py-2 text-xs bc-muted">Loading…</div>
+              <p className="px-3 py-2 text-xs text-muted-foreground">Loading…</p>
             ) : filteredRepos.length === 0 ? (
-              <div className="px-3 py-2 text-xs">
-                <div className="font-semibold">No repositories</div>
-                <p className="bc-muted mt-1">Import a public GitHub repo to get started.</p>
+              <div className="px-3 py-6 text-center text-xs">
+                <p className="font-semibold">No repositories</p>
+                <p className="mt-1 text-muted-foreground">
+                  Import a public GitHub repo to get started.
+                </p>
               </div>
             ) : (
               filteredRepos.map((repository) => (
@@ -245,192 +240,326 @@ function WorkspaceShell() {
                   key={repository._id}
                   type="button"
                   onClick={() => setSelectedRepositoryId(repository._id)}
-                  className={
+                  className={cn(
+                    'flex w-full items-center gap-2 border px-3 py-2 text-left transition-colors',
                     selectedRepositoryId === repository._id
-                      ? 'bc-thread-item bc-thread-item-active'
-                      : 'bc-thread-item'
-                  }
+                      ? 'border-primary bg-muted'
+                      : 'border-transparent hover:border-border hover:bg-muted',
+                  )}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold">
+                    <p className="truncate text-sm font-medium">
                       {repository.sourceRepoFullName}
-                    </div>
-                    <div className="bc-muted mt-1 text-[11px] truncate">
-                      {repository.detectedFramework ?? 'Framework not detected yet'}
-                    </div>
+                    </p>
+                    <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                      {repository.detectedFramework ?? 'Framework pending'}
+                    </p>
                   </div>
                 </button>
               ))
             )}
           </div>
+        </SidebarContent>
 
-          <div className="bc-sidebar-section bc-sidebar-footer">
-            <div className="flex items-center gap-2">
-              <ModeToggle />
-              <a
-                className="bc-iconBtn"
-                href="https://github.com"
-                rel="noreferrer"
-                target="_blank"
-                aria-label="GitHub"
-                title="GitHub"
-              >
-                <GithubLogo size={18} weight="bold" />
-              </a>
-              <div className="ml-auto">
-                <AuthButton />
-              </div>
-            </div>
+        <SidebarFooter>
+          <ModeToggle />
+          <Button asChild variant="ghost" size="icon" aria-label="GitHub" title="GitHub">
+            <a href="https://github.com" rel="noreferrer" target="_blank">
+              <GithubLogo weight="bold" />
+            </a>
+          </Button>
+          <div className="ml-auto">
+            <AuthButton size="sm" />
           </div>
-        </div>
-      </aside>
+        </SidebarFooter>
+      </Sidebar>
 
-      <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+      <SidebarInset>
         {!workspace ? (
-          <EmptyWorkspace />
-        ) : (
           <>
-            <div className="border-b border-border bg-[hsl(var(--bc-bg))]">
-              <div className="flex flex-col gap-3 px-6 py-5 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <div className="bc-kicker">
-                    <span className="bc-kickerDot" />
-                    Workspace
-                  </div>
-                  <h1 className="bc-h1 mt-2 truncate text-2xl">
-                    {workspace.repository.sourceRepoFullName}
-                  </h1>
-                  <p className="bc-muted mt-2 max-w-3xl text-sm">
-                    {workspace.repository.summary ??
-                      'Repository created. Waiting for the first analysis to complete.'}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    className="bc-btn"
-                    disabled={isRunningAnalysis || !analysisPrompt.trim()}
-                    onClick={() => void handleRunAnalysis()}
-                  >
-                    {isRunningAnalysis ? 'Queuing…' : 'Run deep analysis'}
-                  </button>
-                  <button
-                    type="button"
-                    className="bc-btn"
-                    disabled={isCleaningSandbox}
-                    onClick={() => void handleCleanupSandbox()}
-                  >
-                    {isCleaningSandbox ? 'Cleaning…' : 'Clean sandbox'}
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid gap-px border-t border-border bg-border md:grid-cols-4">
-                <MetricCell label="Status" value={workspace.repository.importStatus} />
-                <MetricCell
-                  label="Framework"
-                  value={workspace.repository.detectedFramework ?? 'Unknown'}
-                />
-                <MetricCell label="Files indexed" value={String(workspace.fileCount)} />
-                <MetricCell
-                  label="Languages"
-                  value={workspace.repository.detectedLanguages.join(', ') || 'Unknown'}
-                />
-              </div>
-
-              <nav className="flex items-center gap-1 px-4 pt-2">
-                {(
-                  [
-                    ['chat', 'Chat'],
-                    ['jobs', `Jobs · ${jobs.length}`],
-                    ['artifacts', `Artifacts · ${artifacts.length}`],
-                    ['analysis', 'Deep analysis'],
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    onClick={() => setActiveTab(id)}
-                    className={`px-3 py-2 text-xs font-semibold transition ${
-                      activeTab === id
-                        ? 'border-b-2 border-[hsl(var(--bc-accent))] text-[hsl(var(--bc-fg))]'
-                        : 'border-b-2 border-transparent text-[hsl(var(--bc-fg-muted))] hover:text-[hsl(var(--bc-fg))]'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </nav>
-            </div>
-
-            <div className="flex min-h-0 flex-1 flex-col">
-              {activeTab === 'chat' ? (
-                <ChatPanel
-                  workspace={workspace}
-                  selectedThreadId={selectedThreadId}
-                  setSelectedThreadId={setSelectedThreadId}
-                  messages={messages}
-                  chatInput={chatInput}
-                  setChatInput={setChatInput}
-                  chatMode={chatMode}
-                  setChatMode={setChatMode}
-                  isSending={isSending}
-                  isCreatingThread={isCreatingThread}
-                  onCreateThread={handleCreateThread}
-                  onSendMessage={handleSendMessage}
-                />
-              ) : activeTab === 'jobs' ? (
-                <ListPanel emptyText="No jobs yet.">
-                  {jobs.map((job) => (
-                    <JobRow key={job._id} job={job} />
-                  ))}
-                </ListPanel>
-              ) : activeTab === 'artifacts' ? (
-                <ListPanel emptyText="Once the import finishes, manifests, READMEs, and architecture summaries appear here.">
-                  {artifacts.map((artifact) => (
-                    <article key={artifact._id} className="bc-card p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <h4 className="text-sm font-semibold truncate">{artifact.title}</h4>
-                          <p className="mt-1 text-xs bc-muted">{artifact.summary}</p>
-                        </div>
-                        <span className="bc-badge text-[10px] uppercase">{artifact.kind}</span>
+            <WorkspaceTopBar title="Workspace" />
+            <EmptyWorkspace />
+          </>
+        ) : (
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(value as typeof activeTab)}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <WorkspaceTopBar title={workspace.repository.sourceRepoFullName}>
+              <StatusBadge status={workspace.repository.importStatus} />
+              <div className="ml-auto flex items-center gap-1.5">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Workspace actions"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <DotsThreeVertical weight="bold" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                    <DropdownMenuItem
+                      disabled={isRunningAnalysis || !analysisPrompt.trim()}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        void handleRunAnalysis();
+                      }}
+                    >
+                      <Sparkle weight="bold" />
+                      {isRunningAnalysis ? 'Queuing…' : 'Run deep analysis'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={isCleaningSandbox}
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        void handleCleanupSandbox();
+                      }}
+                    >
+                      <Broom weight="bold" />
+                      {isCleaningSandbox ? 'Cleaning…' : 'Clean sandbox'}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Summary</DropdownMenuLabel>
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      <div className="flex justify-between gap-4">
+                        <span>Framework</span>
+                        <span className="truncate text-foreground">
+                          {workspace.repository.detectedFramework ?? 'Unknown'}
+                        </span>
                       </div>
-                      <pre className="mt-3 overflow-x-auto whitespace-pre-wrap text-xs bc-muted">
+                      <div className="mt-1 flex justify-between gap-4">
+                        <span>Files indexed</span>
+                        <span className="text-foreground">{workspace.fileCount}</span>
+                      </div>
+                      <div className="mt-1 flex justify-between gap-4">
+                        <span>Languages</span>
+                        <span className="max-w-[60%] truncate text-right text-foreground">
+                          {workspace.repository.detectedLanguages.join(', ') || 'Unknown'}
+                        </span>
+                      </div>
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </WorkspaceTopBar>
+
+            <TabsList className="border-b border-border px-4">
+              <TabsTrigger value="chat">Chat</TabsTrigger>
+              <TabsTrigger value="jobs">
+                Jobs
+                {jobs.length > 0 ? <CountBadge count={jobs.length} /> : null}
+              </TabsTrigger>
+              <TabsTrigger value="artifacts">
+                Artifacts
+                {artifacts.length > 0 ? <CountBadge count={artifacts.length} /> : null}
+              </TabsTrigger>
+              <TabsTrigger value="analysis">Deep analysis</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="chat">
+              <ChatPanel
+                workspace={workspace}
+                selectedThreadId={selectedThreadId}
+                setSelectedThreadId={setSelectedThreadId}
+                messages={messages}
+                chatInput={chatInput}
+                setChatInput={setChatInput}
+                chatMode={chatMode}
+                setChatMode={setChatMode}
+                isSending={isSending}
+                isCreatingThread={isCreatingThread}
+                onCreateThread={handleCreateThread}
+                onSendMessage={handleSendMessage}
+              />
+            </TabsContent>
+
+            <TabsContent value="jobs">
+              <ListPanel emptyText="No jobs yet." isEmpty={jobs.length === 0}>
+                {jobs.map((job) => (
+                  <JobRow key={job._id} job={job} />
+                ))}
+              </ListPanel>
+            </TabsContent>
+
+            <TabsContent value="artifacts">
+              <ListPanel
+                emptyText="Once the import finishes, manifests, READMEs, and architecture summaries appear here."
+                isEmpty={artifacts.length === 0}
+              >
+                {artifacts.map((artifact) => (
+                  <Card key={artifact._id}>
+                    <CardHeader className="flex-row items-start justify-between gap-3 p-4 pb-2">
+                      <div className="min-w-0">
+                        <h4 className="truncate text-sm font-semibold">{artifact.title}</h4>
+                        <p className="mt-1 text-xs text-muted-foreground">{artifact.summary}</p>
+                      </div>
+                      <Badge variant="outline" className="uppercase">
+                        {artifact.kind}
+                      </Badge>
+                    </CardHeader>
+                    <CardContent className="p-4 pt-0">
+                      <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-muted-foreground">
                         {artifact.contentMarkdown}
                       </pre>
-                    </article>
-                  ))}
-                </ListPanel>
-              ) : (
-                <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-6 py-6">
-                  <div className="bc-kicker">
-                    <span className="bc-kickerDot" />
-                    Deep analysis prompt
-                  </div>
-                  <p className="bc-muted mt-2 text-sm">
-                    Send a sandbox investigation. The deep path re-reads files inside the sandbox.
-                  </p>
-                  <textarea
-                    value={analysisPrompt}
-                    onChange={(e) => setAnalysisPrompt(e.target.value)}
-                    className="bc-input mt-4 min-h-40"
-                  />
-                  <button
-                    type="button"
-                    className="bc-btn bc-btn-primary mt-3"
-                    disabled={isRunningAnalysis || !analysisPrompt.trim()}
-                    onClick={() => void handleRunAnalysis()}
-                  >
-                    {isRunningAnalysis ? 'Queuing…' : 'Run deep analysis'}
-                  </button>
-                </div>
-              )}
-            </div>
-          </>
+                    </CardContent>
+                  </Card>
+                ))}
+              </ListPanel>
+            </TabsContent>
+
+            <TabsContent value="analysis">
+              <div className="mx-auto w-full max-w-3xl flex-1 overflow-y-auto px-6 py-8">
+                <h2 className="text-lg font-semibold tracking-tight">Deep analysis prompt</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Sends a sandbox investigation. The deep path re-reads files inside the sandbox.
+                </p>
+                <Textarea
+                  value={analysisPrompt}
+                  onChange={(e) => setAnalysisPrompt(e.target.value)}
+                  className="mt-4 min-h-40"
+                />
+                <Button
+                  variant="default"
+                  className="mt-3"
+                  disabled={isRunningAnalysis || !analysisPrompt.trim()}
+                  onClick={() => void handleRunAnalysis()}
+                >
+                  <Sparkle weight="bold" />
+                  {isRunningAnalysis ? 'Queuing…' : 'Run deep analysis'}
+                </Button>
+              </div>
+            </TabsContent>
+          </Tabs>
         )}
-      </main>
+      </SidebarInset>
     </>
+  );
+}
+
+function WorkspaceTopBar({
+  title,
+  children,
+}: {
+  title: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:px-4">
+      <SidebarTrigger />
+      <h1 className="min-w-0 truncate text-sm font-semibold tracking-tight md:text-base">
+        {title}
+      </h1>
+      {children}
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const lower = status.toLowerCase();
+  const variant: React.ComponentProps<typeof Badge>['variant'] =
+    lower.includes('ready') || lower.includes('complete') || lower.includes('success')
+      ? 'accent'
+      : lower.includes('fail') || lower.includes('error')
+        ? 'destructive'
+        : 'muted';
+  return (
+    <Badge variant={variant} className="ml-1 text-[10px] uppercase tracking-wide">
+      {status}
+    </Badge>
+  );
+}
+
+function CountBadge({ count }: { count: number }) {
+  return (
+    <span className="ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center bg-muted px-1 py-px text-[10px] font-semibold text-muted-foreground">
+      {count}
+    </span>
+  );
+}
+
+function ImportRepoDialog({
+  onImported,
+}: {
+  onImported: (repoId: RepositoryId, threadId: ThreadId | null) => void;
+}) {
+  const createRepositoryImport = useMutation(api.repositories.createRepositoryImport);
+  const [open, setOpen] = useState(false);
+  const [importUrl, setImportUrl] = useState('');
+  const [branch, setBranch] = useState('');
+  const [importError, setImportError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setImportError(null);
+    setIsImporting(true);
+    try {
+      const result = await createRepositoryImport({
+        url: importUrl,
+        branch: branch.trim() || undefined,
+      });
+      setImportUrl('');
+      setBranch('');
+      setOpen(false);
+      onImported(result.repositoryId, result.defaultThreadId ?? null);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed.');
+    } finally {
+      setIsImporting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="secondary" size="icon" aria-label="Import repository" title="Import repository">
+          <Plus weight="bold" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Import a repository</DialogTitle>
+          <DialogDescription>
+            Paste a public GitHub URL. We will clone the source and spin up a sandbox.
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            void handleSubmit(e);
+          }}
+        >
+          <Input
+            value={importUrl}
+            onChange={(e) => setImportUrl(e.target.value)}
+            placeholder="https://github.com/owner/repo"
+            autoFocus
+          />
+          <Input
+            value={branch}
+            onChange={(e) => setBranch(e.target.value)}
+            placeholder="branch (optional)"
+          />
+          {importError ? (
+            <p className="text-xs text-destructive">{importError}</p>
+          ) : null}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="secondary">
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button type="submit" variant="default" disabled={isImporting || !importUrl.trim()}>
+              {isImporting ? 'Queuing import…' : 'Import repository'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -463,83 +592,81 @@ function ChatPanel({
 }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2 overflow-x-auto">
-        {workspace.threads.map((thread) => (
-          <button
-            key={thread._id}
-            type="button"
-            onClick={() => setSelectedThreadId(thread._id)}
-            className={`shrink-0 border px-3 py-1.5 text-xs transition ${
-              selectedThreadId === thread._id
-                ? 'border-[hsl(var(--bc-accent))] bg-[hsl(var(--bc-surface-2))] text-[hsl(var(--bc-fg))]'
-                : 'border-[hsl(var(--bc-border))] bg-transparent text-[hsl(var(--bc-fg-muted))] hover:text-[hsl(var(--bc-fg))]'
-            }`}
-          >
-            {thread.title}
-          </button>
-        ))}
-        <div className="ml-auto flex shrink-0 items-center gap-2">
-          <select
-            value={chatMode}
-            onChange={(e) => setChatMode(e.target.value as 'fast' | 'deep')}
-            className="bc-input py-1.5 text-xs"
-            style={{ width: 'auto' }}
-          >
-            <option value="fast">Fast path</option>
-            <option value="deep">Deep path</option>
-          </select>
-          <button
-            type="button"
-            className="bc-btn py-1.5 text-xs"
-            disabled={isCreatingThread}
-            onClick={() => void onCreateThread()}
-          >
-            <Plus size={12} weight="bold" />
-            {isCreatingThread ? 'Creating…' : 'New thread'}
-          </button>
+      {workspace.threads.length > 0 ? (
+        <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border px-3 py-1.5">
+          {workspace.threads.map((thread) => (
+            <button
+              key={thread._id}
+              type="button"
+              onClick={() => setSelectedThreadId(thread._id)}
+              className={cn(
+                'shrink-0 border px-2.5 py-1 text-xs font-medium transition-colors',
+                selectedThreadId === thread._id
+                  ? 'border-primary bg-muted text-foreground'
+                  : 'border-transparent bg-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {thread.title}
+            </button>
+          ))}
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="xs"
+              disabled={isCreatingThread}
+              onClick={() => void onCreateThread()}
+            >
+              <Plus weight="bold" />
+              {isCreatingThread ? 'Creating…' : 'New thread'}
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-6 py-6">
           {messages === undefined ? (
-            <p className="text-sm bc-muted">Loading conversation…</p>
+            <p className="text-sm text-muted-foreground">Loading conversation…</p>
           ) : messages.length === 0 ? (
-            <p className="text-sm bc-muted">
-              Try asking something like: “How is the codebase layered, and where do requests flow?”
-            </p>
+            <EmptyChatHint />
           ) : (
             messages.map((message) => <MessageBubble key={message._id} message={message} />)
           )}
         </div>
       </div>
 
-      <div className="border-t border-border bg-[hsl(var(--bc-bg))]">
+      <div className="border-t border-border bg-background">
         <form
-          className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-6 py-4"
+          className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-6 py-3"
           onSubmit={(e) => {
             void onSendMessage(e);
           }}
         >
-          <textarea
+          <Textarea
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             placeholder="Ask about architecture, module boundaries, data flow, risks…"
-            className="bc-input min-h-24 resize-none"
+            className="min-h-20 resize-none border-border"
           />
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs bc-muted">
-              <span className="font-semibold text-[hsl(var(--bc-fg))]">Fast</span> uses the indexed
-              context. <span className="font-semibold text-[hsl(var(--bc-fg))]">Deep</span> re-reads
-              the repo in the sandbox.
-            </p>
-            <button
+            <Select value={chatMode} onValueChange={(v) => setChatMode(v as 'fast' | 'deep')}>
+              <SelectTrigger className="h-8 w-[130px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="fast">Fast path</SelectItem>
+                <SelectItem value="deep">Deep path</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
               type="submit"
-              className="bc-btn bc-btn-primary"
+              variant="default"
+              size="sm"
               disabled={isSending || !selectedThreadId || !chatInput.trim()}
             >
+              <PaperPlaneTilt weight="bold" />
               {isSending ? 'Sending…' : 'Send'}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -547,29 +674,38 @@ function ChatPanel({
   );
 }
 
-function ListPanel({
-  emptyText,
-  children,
-}: {
-  emptyText: string;
-  children: React.ReactNode;
-}) {
-  const items = Array.isArray(children) ? children : [children];
-  const isEmpty = items.length === 0;
+function EmptyChatHint() {
+  const hints = [
+    'How is the codebase layered, and where do requests flow?',
+    'What are the main modules and how do they depend on each other?',
+    'Where are the risky areas or likely hotspots?',
+  ];
   return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-6 py-6">
-        {isEmpty ? <p className="text-sm bc-muted">{emptyText}</p> : children}
-      </div>
+    <div className="flex flex-col items-center gap-3 py-16 text-center">
+      <p className="text-sm font-medium text-foreground">Ask anything about this repo</p>
+      <ul className="flex flex-col gap-1.5 text-sm text-muted-foreground">
+        {hints.map((hint) => (
+          <li key={hint}>“{hint}”</li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-function MetricCell({ label, value }: { label: string; value: string }) {
+function ListPanel({
+  emptyText,
+  children,
+  isEmpty,
+}: {
+  emptyText: string;
+  children: React.ReactNode;
+  isEmpty: boolean;
+}) {
   return (
-    <div className="bg-[hsl(var(--bc-bg))] px-4 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-wider bc-muted">{label}</p>
-      <p className="mt-1 truncate text-sm font-medium">{value}</p>
+    <div className="flex-1 overflow-y-auto">
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-6 py-6">
+        {isEmpty ? <p className="text-sm text-muted-foreground">{emptyText}</p> : children}
+      </div>
     </div>
   );
 }
@@ -577,68 +713,75 @@ function MetricCell({ label, value }: { label: string; value: string }) {
 function MessageBubble({ message }: { message: Doc<'messages'> }) {
   const isUser = message.role === 'user';
   return (
-    <article className={isUser ? 'chat-message-user' : 'chat-message-assistant'}>
+    <Card
+      className={cn(
+        'p-4',
+        isUser ? 'bg-muted' : 'border-transparent bg-transparent px-0',
+      )}
+    >
       <div className="mb-1 flex items-center justify-between gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wider bc-muted">
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           {message.role}
         </p>
-        <p className="text-[10px] bc-muted">{message.status}</p>
+        <p className="text-[10px] text-muted-foreground">{message.status}</p>
       </div>
       <p className="whitespace-pre-wrap text-sm leading-6">{message.content || '…'}</p>
       {message.errorMessage ? (
-        <p className="mt-2 text-xs text-[hsl(var(--bc-error))]">{message.errorMessage}</p>
+        <p className="mt-2 text-xs text-destructive">{message.errorMessage}</p>
       ) : null}
-    </article>
+    </Card>
   );
 }
 
 function JobRow({ job }: { job: Doc<'jobs'> }) {
   return (
-    <article className="bc-card p-3">
+    <Card className="p-3">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold">{job.kind}</p>
-          <p className="text-xs bc-muted">
+          <p className="text-xs text-muted-foreground">
             {job.stage} · {Math.round(job.progress * 100)}%
           </p>
         </div>
-        <span className="bc-badge text-[10px] uppercase">{job.status}</span>
+        <Badge variant="outline" className="uppercase">
+          {job.status}
+        </Badge>
       </div>
       {job.outputSummary ? (
-        <p className="mt-2 text-xs bc-muted">{job.outputSummary}</p>
+        <p className="mt-2 text-xs text-muted-foreground">{job.outputSummary}</p>
       ) : null}
       {job.errorMessage ? (
-        <p className="mt-2 text-xs text-[hsl(var(--bc-error))]">{job.errorMessage}</p>
+        <p className="mt-2 text-xs text-destructive">{job.errorMessage}</p>
       ) : null}
-      <p className="mt-2 text-[10px] bc-muted">{formatTimestamp(job._creationTime)}</p>
-    </article>
+      <p className="mt-2 text-[10px] text-muted-foreground">
+        {formatTimestamp(job._creationTime)}
+      </p>
+    </Card>
   );
 }
 
-function AuthButton() {
+function AuthButton({ size = 'default' }: { size?: 'default' | 'sm' }) {
   const { user, signIn, signOut } = useAuth();
   return user ? (
-    <button type="button" className="bc-btn text-xs" onClick={() => signOut()}>
+    <Button variant="secondary" size={size} onClick={() => signOut()}>
       Sign out
-    </button>
+    </Button>
   ) : (
-    <button type="button" className="bc-btn bc-btn-primary text-xs" onClick={() => void signIn()}>
+    <Button variant="default" size={size} onClick={() => void signIn()}>
       Sign in
-    </button>
+    </Button>
   );
 }
 
 function EmptyWorkspace() {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-6 p-10 text-center">
-      <div className="bc-logoMark h-16 w-16">
-        <Robot size={32} weight="bold" />
-      </div>
-      <div>
-        <h1 className="bc-h1 text-2xl">Import your first repository</h1>
-        <p className="bc-muted mt-2 max-w-md text-sm">
-          Paste a GitHub URL on the left. We will clone the source, spin up a Daytona sandbox, and
-          ship the first batch of manifest and architecture artifacts.
+    <div className="flex flex-1 flex-col items-center justify-center gap-5 p-10 text-center">
+      <LogoMark size="lg" />
+      <div className="max-w-md">
+        <h1 className="text-2xl font-semibold tracking-tight">Import your first repository</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Use the <span className="font-semibold text-foreground">+</span> button in the sidebar
+          to paste a GitHub URL.
         </p>
       </div>
     </div>
@@ -648,50 +791,45 @@ function EmptyWorkspace() {
 function SignedOutShell() {
   return (
     <div className="flex flex-1 flex-col">
-      <header className="bc-header">
-        <div className="bc-container flex items-center justify-between gap-4 py-4">
-          <div className="bc-chip">
-            <div className="bc-logoMark h-9 w-9">
-              <Robot size={16} weight="bold" />
-            </div>
+      <header className="border-b border-border bg-background">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-4">
+          <div className="flex items-center gap-3">
+            <LogoMark size="sm" />
             <div className="min-w-0 leading-tight">
-              <div className="bc-title text-sm">Architect Agent</div>
-              <div className="bc-subtitle text-[11px]">Grounded codebase answers</div>
+              <div className="text-sm font-semibold tracking-tight">Architect Agent</div>
+              <div className="text-[11px] text-muted-foreground">Grounded codebase answers</div>
             </div>
           </div>
           <div className="flex items-center gap-2">
             <ModeToggle />
-            <AuthButton />
+            <AuthButton size="sm" />
           </div>
         </div>
       </header>
 
-      <main className="bc-container flex flex-1 flex-col gap-14 py-12">
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-14 px-6 py-12">
         <section className="flex flex-col gap-5">
-          <div className="bc-kicker">
-            <span className="bc-kickerDot" />
+          <div className="inline-flex items-center gap-2.5 text-xs font-semibold tracking-wide text-muted-foreground">
+            <span className="h-2 w-2 bg-primary" />
             Open-source workspace
           </div>
-          <h1 className="bc-h1 max-w-3xl text-balance text-5xl sm:text-6xl">
+          <h1 className="max-w-3xl text-balance text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
             Ask the repo,{' '}
-            <span className="text-[hsl(var(--bc-accent))]">not the internet.</span>
+            <span className="text-primary">not the internet.</span>
           </h1>
-          <p className="bc-prose max-w-2xl text-pretty text-base sm:text-lg">
+          <p className="max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
             Import a public repository, let the sandbox boot, and get grounded answers about its
             architecture, data flow, and risk areas — not generic guesses from a model that never
             saw the code.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <AuthButton />
-            <a
-              className="bc-chip"
-              href="https://github.com"
-              rel="noreferrer"
-              target="_blank"
-            >
-              <GithubLogo size={16} weight="bold" />
-              View on GitHub
-            </a>
+            <Button asChild variant="secondary">
+              <a href="https://github.com" rel="noreferrer" target="_blank">
+                <GithubLogo weight="bold" />
+                View on GitHub
+              </a>
+            </Button>
           </div>
         </section>
 
@@ -716,24 +854,38 @@ function SignedOutShell() {
               body: 'Conversations, manifests, and architecture notes are saved as artifacts.',
             },
           ].map((card) => (
-            <div key={card.label} className="bc-card flex h-full flex-col">
-              <div className="flex items-center justify-between gap-4 px-5 py-4">
-                <div className="bc-badge bc-badgeAccent">
-                  <span className="bc-kickerDot" />
+            <Card key={card.label} className="flex h-full flex-col">
+              <CardHeader className="flex-row items-center justify-between gap-4 p-5 pb-3">
+                <Badge variant="accent">
+                  <span className="h-1.5 w-1.5 bg-primary" />
                   <span>{card.label}</span>
-                </div>
-                <div className="text-xs font-semibold uppercase tracking-wider bc-muted">
+                </Badge>
+                <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   {card.eyebrow}
-                </div>
-              </div>
-              <div className="flex flex-1 flex-col px-5 pb-5">
+                </span>
+              </CardHeader>
+              <CardContent className="flex flex-1 flex-col p-5 pt-0">
                 <h2 className="text-lg font-semibold">{card.title}</h2>
-                <p className="bc-prose mt-2 text-sm">{card.body}</p>
-              </div>
-            </div>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{card.body}</p>
+              </CardContent>
+            </Card>
           ))}
         </section>
       </main>
+    </div>
+  );
+}
+
+function LogoMark({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
+  const isLg = size === 'lg';
+  return (
+    <div
+      className={cn(
+        'grid shrink-0 place-items-center border border-border bg-card text-foreground',
+        isLg ? 'h-16 w-16' : 'h-9 w-9',
+      )}
+    >
+      <Robot size={isLg ? 32 : 16} weight="bold" />
     </div>
   );
 }
