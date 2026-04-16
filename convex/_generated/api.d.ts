@@ -8,7 +8,18 @@
  * @module
  */
 
-import type * as myFunctions from "../myFunctions.js";
+import type * as analysis from "../analysis.js";
+import type * as analysisNode from "../analysisNode.js";
+import type * as chat from "../chat.js";
+import type * as daytona from "../daytona.js";
+import type * as imports from "../imports.js";
+import type * as importsNode from "../importsNode.js";
+import type * as lib_auth from "../lib/auth.js";
+import type * as lib_github from "../lib/github.js";
+import type * as lib_repoAnalysis from "../lib/repoAnalysis.js";
+import type * as ops from "../ops.js";
+import type * as opsNode from "../opsNode.js";
+import type * as repositories from "../repositories.js";
 
 import type {
   ApiFromModules,
@@ -17,7 +28,18 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
-  myFunctions: typeof myFunctions;
+  analysis: typeof analysis;
+  analysisNode: typeof analysisNode;
+  chat: typeof chat;
+  daytona: typeof daytona;
+  imports: typeof imports;
+  importsNode: typeof importsNode;
+  "lib/auth": typeof lib_auth;
+  "lib/github": typeof lib_github;
+  "lib/repoAnalysis": typeof lib_repoAnalysis;
+  ops: typeof ops;
+  opsNode: typeof opsNode;
+  repositories: typeof repositories;
 }>;
 
 /**
