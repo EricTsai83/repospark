@@ -9,7 +9,8 @@
       "Bash(npx vite *)",
       "Bash(echo \"exit: $?\")",
       "Bash(npx eslint *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(find *)"
     ]
   }
 }

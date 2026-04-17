@@ -2,14 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@workos-inc/authkit-react';
 import { Authenticated, Unauthenticated, useMutation, useQuery } from 'convex/react';
 import {
-  GithubLogo,
-  Plus,
-  Robot,
-  MagnifyingGlass,
-  DotsThreeVertical,
-  Broom,
-  Sparkle,
-  PaperPlaneTilt,
+  GithubLogoIcon,
+  PlusIcon,
+  MagnifyingGlassIcon,
+  DotsThreeVerticalIcon,
+  BroomIcon,
+  SparkleIcon,
+  PaperPlaneTiltIcon,
 } from '@phosphor-icons/react';
 import { api } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
@@ -20,13 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -55,6 +48,7 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
+import { Logo } from '@/components/logo';
 
 type RepositoryId = Id<'repositories'>;
 type ThreadId = Id<'threads'>;
@@ -99,10 +93,7 @@ function WorkspaceShell() {
     if (!repositories || repositories.length === 0) {
       return;
     }
-    if (
-      !selectedRepositoryId ||
-      !repositories.some((r) => r._id === selectedRepositoryId)
-    ) {
+    if (!selectedRepositoryId || !repositories.some((r) => r._id === selectedRepositoryId)) {
       setSelectedRepositoryId(repositories[0]._id);
     }
   }, [repositories, selectedRepositoryId]);
@@ -123,10 +114,7 @@ function WorkspaceShell() {
     }
   }, [selectedThreadId, workspace]);
 
-  const messages = useQuery(
-    api.chat.listMessages,
-    selectedThreadId ? { threadId: selectedThreadId } : 'skip',
-  );
+  const messages = useQuery(api.chat.listMessages, selectedThreadId ? { threadId: selectedThreadId } : 'skip');
   const artifacts = useMemo(() => workspace?.artifacts ?? [], [workspace?.artifacts]);
   const jobs = useMemo(() => workspace?.jobs ?? [], [workspace?.jobs]);
 
@@ -134,9 +122,7 @@ function WorkspaceShell() {
     if (!repositories) return [];
     const q = repoSearch.trim().toLowerCase();
     if (!q) return repositories;
-    return repositories.filter((r) =>
-      r.sourceRepoFullName.toLowerCase().includes(q),
-    );
+    return repositories.filter((r) => r.sourceRepoFullName.toLowerCase().includes(q));
   }, [repoSearch, repositories]);
 
   async function handleSendMessage(event: React.FormEvent<HTMLFormElement>) {
@@ -196,18 +182,16 @@ function WorkspaceShell() {
     <>
       <Sidebar>
         <SidebarHeader>
-          <LogoMark size="sm" />
+          <Logo size={30} />
           <div className="min-w-0 leading-tight">
             <div className="truncate text-sm font-semibold tracking-tight">Architect Agent</div>
-            <div className="truncate text-[11px] text-muted-foreground">
-              Grounded codebase answers
-            </div>
+            <div className="truncate text-[11px] text-muted-foreground">Grounded codebase answers</div>
           </div>
         </SidebarHeader>
 
         <div className="flex items-center gap-2 border-b border-border px-3 py-2">
           <div className="flex flex-1 items-center gap-2 border border-border bg-card px-2.5 py-1.5">
-            <MagnifyingGlass size={14} className="shrink-0 text-muted-foreground" weight="bold" />
+            <MagnifyingGlassIcon size={14} className="shrink-0 text-muted-foreground" weight="bold" />
             <input
               value={repoSearch}
               onChange={(e) => setRepoSearch(e.target.value)}
@@ -230,9 +214,7 @@ function WorkspaceShell() {
             ) : filteredRepos.length === 0 ? (
               <div className="px-3 py-6 text-center text-xs">
                 <p className="font-semibold">No repositories</p>
-                <p className="mt-1 text-muted-foreground">
-                  Import a public GitHub repo to get started.
-                </p>
+                <p className="mt-1 text-muted-foreground">Import a public GitHub repo to get started.</p>
               </div>
             ) : (
               filteredRepos.map((repository) => (
@@ -248,9 +230,7 @@ function WorkspaceShell() {
                   )}
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {repository.sourceRepoFullName}
-                    </p>
+                    <p className="truncate text-sm font-medium">{repository.sourceRepoFullName}</p>
                     <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
                       {repository.detectedFramework ?? 'Framework pending'}
                     </p>
@@ -265,7 +245,7 @@ function WorkspaceShell() {
           <ModeToggle />
           <Button asChild variant="ghost" size="icon" aria-label="GitHub" title="GitHub">
             <a href="https://github.com" rel="noreferrer" target="_blank">
-              <GithubLogo weight="bold" />
+              <GithubLogoIcon weight="bold" />
             </a>
           </Button>
           <div className="ml-auto">
@@ -297,7 +277,7 @@ function WorkspaceShell() {
                       aria-label="Workspace actions"
                       className="text-muted-foreground hover:text-foreground"
                     >
-                      <DotsThreeVertical weight="bold" />
+                      <DotsThreeVerticalIcon weight="bold" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-56">
@@ -309,7 +289,7 @@ function WorkspaceShell() {
                         void handleRunAnalysis();
                       }}
                     >
-                      <Sparkle weight="bold" />
+                      <SparkleIcon weight="bold" />
                       {isRunningAnalysis ? 'Queuing…' : 'Run deep analysis'}
                     </DropdownMenuItem>
                     <DropdownMenuItem
@@ -319,7 +299,7 @@ function WorkspaceShell() {
                         void handleCleanupSandbox();
                       }}
                     >
-                      <Broom weight="bold" />
+                      <BroomIcon weight="bold" />
                       {isCleaningSandbox ? 'Cleaning…' : 'Clean sandbox'}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
@@ -428,7 +408,7 @@ function WorkspaceShell() {
                   disabled={isRunningAnalysis || !analysisPrompt.trim()}
                   onClick={() => void handleRunAnalysis()}
                 >
-                  <Sparkle weight="bold" />
+                  <SparkleIcon weight="bold" />
                   {isRunningAnalysis ? 'Queuing…' : 'Run deep analysis'}
                 </Button>
               </div>
@@ -440,19 +420,11 @@ function WorkspaceShell() {
   );
 }
 
-function WorkspaceTopBar({
-  title,
-  children,
-}: {
-  title: string;
-  children?: React.ReactNode;
-}) {
+function WorkspaceTopBar({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:px-4">
       <SidebarTrigger />
-      <h1 className="min-w-0 truncate text-sm font-semibold tracking-tight md:text-base">
-        {title}
-      </h1>
+      <h1 className="min-w-0 truncate text-sm font-semibold tracking-tight md:text-base">{title}</h1>
       {children}
     </div>
   );
@@ -475,17 +447,13 @@ function StatusBadge({ status }: { status: string }) {
 
 function CountBadge({ count }: { count: number }) {
   return (
-    <span className="ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center bg-muted px-1 py-px text-[10px] font-semibold text-muted-foreground">
+    <span className="ml-1.5 inline-flex min-w-5 items-center justify-center bg-muted px-1 py-px text-[10px] font-semibold text-muted-foreground">
       {count}
     </span>
   );
 }
 
-function ImportRepoDialog({
-  onImported,
-}: {
-  onImported: (repoId: RepositoryId, threadId: ThreadId | null) => void;
-}) {
+function ImportRepoDialog({ onImported }: { onImported: (repoId: RepositoryId, threadId: ThreadId | null) => void }) {
   const createRepositoryImport = useMutation(api.repositories.createRepositoryImport);
   const [open, setOpen] = useState(false);
   const [importUrl, setImportUrl] = useState('');
@@ -517,7 +485,7 @@ function ImportRepoDialog({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="secondary" size="icon" aria-label="Import repository" title="Import repository">
-          <Plus weight="bold" />
+          <PlusIcon weight="bold" />
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -539,14 +507,8 @@ function ImportRepoDialog({
             placeholder="https://github.com/owner/repo"
             autoFocus
           />
-          <Input
-            value={branch}
-            onChange={(e) => setBranch(e.target.value)}
-            placeholder="branch (optional)"
-          />
-          {importError ? (
-            <p className="text-xs text-destructive">{importError}</p>
-          ) : null}
+          <Input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="branch (optional)" />
+          {importError ? <p className="text-xs text-destructive">{importError}</p> : null}
           <DialogFooter>
             <DialogClose asChild>
               <Button type="button" variant="secondary">
@@ -610,13 +572,8 @@ function ChatPanel({
             </button>
           ))}
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
-            <Button
-              variant="ghost"
-              size="xs"
-              disabled={isCreatingThread}
-              onClick={() => void onCreateThread()}
-            >
-              <Plus weight="bold" />
+            <Button variant="ghost" size="xs" disabled={isCreatingThread} onClick={() => void onCreateThread()}>
+              <PlusIcon weight="bold" />
               {isCreatingThread ? 'Creating…' : 'New thread'}
             </Button>
           </div>
@@ -664,7 +621,7 @@ function ChatPanel({
               size="sm"
               disabled={isSending || !selectedThreadId || !chatInput.trim()}
             >
-              <PaperPlaneTilt weight="bold" />
+              <PaperPlaneTiltIcon weight="bold" />
               {isSending ? 'Sending…' : 'Send'}
             </Button>
           </div>
@@ -713,22 +670,13 @@ function ListPanel({
 function MessageBubble({ message }: { message: Doc<'messages'> }) {
   const isUser = message.role === 'user';
   return (
-    <Card
-      className={cn(
-        'p-4',
-        isUser ? 'bg-muted' : 'border-transparent bg-transparent px-0',
-      )}
-    >
+    <Card className={cn('p-4', isUser ? 'bg-muted' : 'border-transparent bg-transparent px-0')}>
       <div className="mb-1 flex items-center justify-between gap-3">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          {message.role}
-        </p>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{message.role}</p>
         <p className="text-[10px] text-muted-foreground">{message.status}</p>
       </div>
       <p className="whitespace-pre-wrap text-sm leading-6">{message.content || '…'}</p>
-      {message.errorMessage ? (
-        <p className="mt-2 text-xs text-destructive">{message.errorMessage}</p>
-      ) : null}
+      {message.errorMessage ? <p className="mt-2 text-xs text-destructive">{message.errorMessage}</p> : null}
     </Card>
   );
 }
@@ -747,15 +695,9 @@ function JobRow({ job }: { job: Doc<'jobs'> }) {
           {job.status}
         </Badge>
       </div>
-      {job.outputSummary ? (
-        <p className="mt-2 text-xs text-muted-foreground">{job.outputSummary}</p>
-      ) : null}
-      {job.errorMessage ? (
-        <p className="mt-2 text-xs text-destructive">{job.errorMessage}</p>
-      ) : null}
-      <p className="mt-2 text-[10px] text-muted-foreground">
-        {formatTimestamp(job._creationTime)}
-      </p>
+      {job.outputSummary ? <p className="mt-2 text-xs text-muted-foreground">{job.outputSummary}</p> : null}
+      {job.errorMessage ? <p className="mt-2 text-xs text-destructive">{job.errorMessage}</p> : null}
+      <p className="mt-2 text-[10px] text-muted-foreground">{formatTimestamp(job._creationTime)}</p>
     </Card>
   );
 }
@@ -776,12 +718,11 @@ function AuthButton({ size = 'default' }: { size?: 'default' | 'sm' }) {
 function EmptyWorkspace() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-5 p-10 text-center">
-      <LogoMark size="lg" />
+      <Logo size={64} hero />
       <div className="max-w-md">
         <h1 className="text-2xl font-semibold tracking-tight">Import your first repository</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Use the <span className="font-semibold text-foreground">+</span> button in the sidebar
-          to paste a GitHub URL.
+          Use the <span className="font-semibold text-foreground">+</span> button in the sidebar to paste a GitHub URL.
         </p>
       </div>
     </div>
@@ -790,11 +731,29 @@ function EmptyWorkspace() {
 
 function SignedOutShell() {
   return (
-    <div className="flex flex-1 flex-col">
-      <header className="border-b border-border bg-background">
+    <div className="relative flex flex-1 flex-col overflow-hidden">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.35] dark:opacity-60"
+        style={{
+          backgroundImage:
+            'radial-gradient(60% 50% at 18% 0%, rgba(56,189,248,0.22) 0%, rgba(56,189,248,0) 60%), radial-gradient(40% 40% at 90% 10%, rgba(125,211,252,0.18) 0%, rgba(125,211,252,0) 60%)',
+        }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 -z-10 opacity-[0.08] mask-[radial-gradient(ellipse_at_top,black,transparent_70%)]"
+        style={{
+          backgroundImage:
+            'linear-gradient(to right, currentColor 1px, transparent 1px), linear-gradient(to bottom, currentColor 1px, transparent 1px)',
+          backgroundSize: '36px 36px',
+        }}
+      />
+
+      <header className="border-b border-border bg-background/60 backdrop-blur">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-6 py-4">
           <div className="flex items-center gap-3">
-            <LogoMark size="sm" />
+            <Logo size={36} />
             <div className="min-w-0 leading-tight">
               <div className="text-sm font-semibold tracking-tight">Architect Agent</div>
               <div className="text-[11px] text-muted-foreground">Grounded codebase answers</div>
@@ -807,26 +766,30 @@ function SignedOutShell() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-14 px-6 py-12">
-        <section className="flex flex-col gap-5">
-          <div className="inline-flex items-center gap-2.5 text-xs font-semibold tracking-wide text-muted-foreground">
-            <span className="h-2 w-2 bg-primary" />
-            Open-source workspace
+      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-14 px-6 py-16">
+        <section className="flex flex-col gap-6">
+          <div className="inline-flex w-fit items-center gap-2 border border-border bg-card/60 px-2.5 py-1 text-[11px] font-medium tracking-wide text-muted-foreground backdrop-blur">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping bg-primary opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 bg-primary" />
+            </span>
+            <span className="uppercase">Early access · open source</span>
           </div>
-          <h1 className="max-w-3xl text-balance text-5xl font-semibold leading-[1.05] tracking-tight sm:text-6xl">
+          <h1 className="max-w-3xl text-balance text-5xl font-semibold leading-[1.02] tracking-tight sm:text-6xl">
             Ask the repo,{' '}
-            <span className="text-primary">not the internet.</span>
+            <span className="bg-linear-to-r from-foreground via-foreground/70 to-foreground/40 bg-clip-text text-transparent">
+              not the internet.
+            </span>
           </h1>
           <p className="max-w-2xl text-pretty text-base leading-relaxed text-muted-foreground sm:text-lg">
-            Import a public repository, let the sandbox boot, and get grounded answers about its
-            architecture, data flow, and risk areas — not generic guesses from a model that never
-            saw the code.
+            Import a public repository, let the sandbox boot, and get grounded answers about its architecture, data
+            flow, and risk areas — not generic guesses from a model that never saw the code.
           </p>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <AuthButton />
             <Button asChild variant="secondary">
               <a href="https://github.com" rel="noreferrer" target="_blank">
-                <GithubLogo weight="bold" />
+                <GithubLogoIcon weight="bold" />
                 View on GitHub
               </a>
             </Button>
@@ -872,20 +835,6 @@ function SignedOutShell() {
           ))}
         </section>
       </main>
-    </div>
-  );
-}
-
-function LogoMark({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
-  const isLg = size === 'lg';
-  return (
-    <div
-      className={cn(
-        'grid shrink-0 place-items-center border border-border bg-card text-foreground',
-        isLg ? 'h-16 w-16' : 'h-9 w-9',
-      )}
-    >
-      <Robot size={isLg ? 32 : 16} weight="bold" />
     </div>
   );
 }
