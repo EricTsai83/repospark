@@ -8,12 +8,12 @@ type LogoProps = {
 const VB = 256;
 const RADIUS = 56;
 
-// 游標：尖端右上，整個形狀沿 45° 對角線 (右上↔左下) 完美對稱
-// 對稱意味著：任一點 (x, y) 在鏡像後對應點為 (256-y, 256-x)（對角線為 y = 256-x）
-// 尖端: (216, 40) → 鏡像 (216, 40) ✓ (在對角線上)
-// 左端外: (40, 112) ↔ 下端外: (144, 216)   [256-112=144, 256-40=216]
-// 左端內: (40, 128) ↔ 下端內: (128, 216)   [256-128=128, 256-40=216]
-// 凹點: (p, q) 要在對角線上 → q = 256-p，取 (112, 144)
+// Cursor: tip at upper-right, shape is perfectly symmetric along the 45° diagonal (upper-right ↔ lower-left).
+// Symmetry means: any point (x, y) mirrors to (256-y, 256-x) (diagonal is y = 256-x).
+// Tip: (216, 40) → mirrors to (216, 40) ✓ (on the diagonal)
+// Outer left: (40, 112) ↔ outer bottom: (144, 216)   [256-112=144, 256-40=216]
+// Inner left: (40, 128) ↔ inner bottom: (128, 216)   [256-128=128, 256-40=216]
+// Concave point: (p, q) must lie on the diagonal → q = 256-p, picked (112, 144)
 const CURSOR_PATH = [
   'M 216 40',
   'L 40 112',
@@ -40,11 +40,11 @@ export function Logo({ size = 36, className, hero = false }: LogoProps) {
       {hero ? <circle cx={VB / 2} cy={VB / 2} r={VB / 2 - 4} fill="url(#aaLogoHalo)" /> : null}
 
       <g clipPath="url(#aaLogoClip)">
-        {/* 左下紅 / 右上藍，沿左上→右下對角線切分 */}
+        {/* Pink lower-left / blue upper-right, split along the top-left→bottom-right diagonal */}
         <path d={`M0 0 L0 ${VB} L${VB} ${VB} Z`} fill="url(#aaLogoPink)" />
         <path d={`M0 0 L${VB} ${VB} L${VB} 0 Z`} fill="url(#aaLogoBlue)" />
 
-        {/* Cursor 游標：尖端指向右上，直接在目標座標系繪製 */}
+        {/* Cursor arrow: tip pointing upper-right, drawn directly in the target coordinate system */}
         <path d={CURSOR_PATH} fill="currentColor" />
       </g>
 
