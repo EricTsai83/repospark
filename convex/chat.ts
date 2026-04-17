@@ -81,6 +81,64 @@ export const createThread = mutation({
   },
 });
 
+export const deleteThread = mutation({
+  args: {
+    threadId: v.id('threads'),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireViewerIdentity(ctx);
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread || thread.ownerTokenIdentifier !== identity.tokenIdentifier) {
+      throw new Error('Thread not found.');
+    }
+
+    // Delete all messages in this thread
+    const messages = await ctx.db
+      .query('messages')
+      .withIndex('by_threadId', (q) => q.eq('threadId', args.threadId))
+      .take(500);
+    for (const message of messages) {
+      await ctx.db.delete(message._id);
+    }
+
+    // Clear defaultThreadId reference on the repository if needed
+    const repository = await ctx.db.get(thread.repositoryId);
+    if (repository && repository.defaultThreadId === args.threadId) {
+      await ctx.db.patch(thread.repositoryId, { defaultThreadId: undefined });
+    }
+
+    // Delete the thread itself
+    await ctx.db.delete(args.threadId);
+
+    // If there might be more messages, schedule continuation cleanup
+    if (messages.length === 500) {
+      await ctx.scheduler.runAfter(0, internal.chat.cleanupOrphanedMessages, {
+        threadId: args.threadId,
+      });
+    }
+  },
+});
+
+export const cleanupOrphanedMessages = internalMutation({
+  args: {
+    threadId: v.id('threads'),
+  },
+  handler: async (ctx, args) => {
+    const messages = await ctx.db
+      .query('messages')
+      .withIndex('by_threadId', (q) => q.eq('threadId', args.threadId))
+      .take(500);
+    for (const message of messages) {
+      await ctx.db.delete(message._id);
+    }
+    if (messages.length === 500) {
+      await ctx.scheduler.runAfter(0, internal.chat.cleanupOrphanedMessages, {
+        threadId: args.threadId,
+      });
+    }
+  },
+});
+
 export const sendMessage = mutation({
   args: {
     threadId: v.id('threads'),

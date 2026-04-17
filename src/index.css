@@ -81,9 +81,9 @@
   --bc-surface: 0 0% 18%;
   --bc-surface-2: 0 0% 26%;
   --bc-accent: 218 80% 60%;
-  --bc-success: 150.9 61.3% 30.4%;
-  --bc-warning: 34.8 78.6% 40.4%;
-  --bc-error: 0 50.6% 46.1%;
+  --bc-success: 150.9 61.3% 44%;
+  --bc-warning: 34.8 78.6% 52%;
+  --bc-error: 0 62% 60%;
   --bc-shadow: 0 0% 0%;
 
   --background: hsl(var(--bc-bg));

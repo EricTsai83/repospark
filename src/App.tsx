@@ -10,6 +10,7 @@ import {
   SparkleIcon,
   PaperPlaneTiltIcon,
   ChatCircleIcon,
+  TrashIcon,
 } from '@phosphor-icons/react';
 import { api } from '../convex/_generated/api';
 import type { Doc, Id } from '../convex/_generated/dataModel';
@@ -59,7 +60,7 @@ export default function App() {
     <div className="flex h-dvh overflow-hidden bg-background">
       <Authenticated>
         <SidebarProvider>
-          <WorkspaceShell />
+          <RepositoryShell />
         </SidebarProvider>
       </Authenticated>
       <Unauthenticated>
@@ -69,15 +70,21 @@ export default function App() {
   );
 }
 
-function WorkspaceShell() {
+function RepositoryShell() {
   const repositories = useQuery(api.repositories.listRepositories);
   const requestDeepAnalysis = useMutation(api.analysis.requestDeepAnalysis);
   const sendMessage = useMutation(api.chat.sendMessage);
   const createThread = useMutation(api.chat.createThread);
   const requestSandboxCleanup = useMutation(api.ops.requestSandboxCleanup);
+  const deleteThread = useMutation(api.chat.deleteThread);
+  const deleteRepository = useMutation(api.repositories.deleteRepository);
 
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<RepositoryId | null>(null);
   const [selectedThreadId, setSelectedThreadId] = useState<ThreadId | null>(null);
+  const [threadToDelete, setThreadToDelete] = useState<ThreadId | null>(null);
+  const [isDeletingThread, setIsDeletingThread] = useState(false);
+  const [showDeleteRepoDialog, setShowDeleteRepoDialog] = useState(false);
+  const [isDeletingRepo, setIsDeletingRepo] = useState(false);
   const [analysisPrompt, setAnalysisPrompt] = useState(
     'Summarize the main modules, data flow, and risk areas for this repository.',
   );
@@ -99,25 +106,25 @@ function WorkspaceShell() {
     }
   }, [repositories, selectedRepositoryId]);
 
-  const workspace = useQuery(
-    api.repositories.getWorkspace,
+  const repoDetail = useQuery(
+    api.repositories.getRepositoryDetail,
     selectedRepositoryId ? { repositoryId: selectedRepositoryId } : 'skip',
   );
 
   useEffect(() => {
-    if (!workspace?.threads?.length) {
+    if (!repoDetail?.threads?.length) {
       setSelectedThreadId(null);
       return;
     }
-    const preferred = workspace.repository.defaultThreadId ?? workspace.threads[0]?._id;
-    if (!selectedThreadId || !workspace.threads.some((t) => t._id === selectedThreadId)) {
+    const preferred = repoDetail.repository.defaultThreadId ?? repoDetail.threads[0]?._id;
+    if (!selectedThreadId || !repoDetail.threads.some((t) => t._id === selectedThreadId)) {
       setSelectedThreadId(preferred ?? null);
     }
-  }, [selectedThreadId, workspace]);
+  }, [selectedThreadId, repoDetail]);
 
   const messages = useQuery(api.chat.listMessages, selectedThreadId ? { threadId: selectedThreadId } : 'skip');
-  const artifacts = useMemo(() => workspace?.artifacts ?? [], [workspace?.artifacts]);
-  const jobs = useMemo(() => workspace?.jobs ?? [], [workspace?.jobs]);
+  const artifacts = useMemo(() => repoDetail?.artifacts ?? [], [repoDetail?.artifacts]);
+  const jobs = useMemo(() => repoDetail?.jobs ?? [], [repoDetail?.jobs]);
 
   const filteredRepos = useMemo(() => {
     if (!repositories) return [];
@@ -176,6 +183,33 @@ function WorkspaceShell() {
       await requestSandboxCleanup({ repositoryId: selectedRepositoryId });
     } finally {
       setIsCleaningSandbox(false);
+    }
+  }
+
+  async function handleDeleteThread() {
+    if (!threadToDelete) return;
+    setIsDeletingThread(true);
+    try {
+      await deleteThread({ threadId: threadToDelete });
+      if (selectedThreadId === threadToDelete) {
+        setSelectedThreadId(null);
+      }
+    } finally {
+      setIsDeletingThread(false);
+      setThreadToDelete(null);
+    }
+  }
+
+  async function handleDeleteRepo() {
+    if (!selectedRepositoryId) return;
+    setIsDeletingRepo(true);
+    try {
+      await deleteRepository({ repositoryId: selectedRepositoryId });
+      setSelectedRepositoryId(null);
+      setSelectedThreadId(null);
+    } finally {
+      setIsDeletingRepo(false);
+      setShowDeleteRepoDialog(false);
     }
   }
 
@@ -241,7 +275,7 @@ function WorkspaceShell() {
             )}
           </div>
 
-          {workspace && workspace.threads.length > 0 ? (
+          {repoDetail && repoDetail.threads.length > 0 ? (
             <>
               <div className="border-t border-border" />
               <div className="flex flex-col gap-1 p-3">
@@ -259,29 +293,45 @@ function WorkspaceShell() {
                     <PlusIcon weight="bold" size={14} />
                   </Button>
                 </div>
-                {workspace.threads.map((thread) => (
-                  <button
+                {repoDetail.threads.map((thread) => (
+                  <div
                     key={thread._id}
-                    type="button"
-                    onClick={() => setSelectedThreadId(thread._id)}
                     className={cn(
-                      'flex w-full items-center gap-2 border px-3 py-1.5 text-left transition-colors',
+                      'group flex w-full items-center border transition-colors',
                       selectedThreadId === thread._id
                         ? 'border-primary bg-muted text-foreground'
                         : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground',
                     )}
                   >
-                    <ChatCircleIcon
-                      size={14}
-                      weight={selectedThreadId === thread._id ? 'fill' : 'regular'}
-                      className="shrink-0"
-                    />
-                    <span className="truncate text-xs font-medium">{thread.title}</span>
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedThreadId(thread._id)}
+                      className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left"
+                    >
+                      <ChatCircleIcon
+                        size={14}
+                        weight={selectedThreadId === thread._id ? 'fill' : 'regular'}
+                        className="shrink-0"
+                      />
+                      <span className="truncate text-xs font-medium">{thread.title}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setThreadToDelete(thread._id);
+                      }}
+                      className="mr-1.5 hidden shrink-0 p-1 text-muted-foreground hover:text-destructive group-hover:block"
+                      aria-label="Delete thread"
+                      title="Delete thread"
+                    >
+                      <TrashIcon size={13} weight="bold" />
+                    </button>
+                  </div>
                 ))}
               </div>
             </>
-          ) : workspace ? (
+          ) : repoDetail ? (
             <>
               <div className="border-t border-border" />
               <div className="flex flex-col gap-1 p-3">
@@ -319,10 +369,10 @@ function WorkspaceShell() {
       </Sidebar>
 
       <SidebarInset>
-        {!workspace ? (
+        {!repoDetail ? (
           <>
-            <WorkspaceTopBar title="Workspace" />
-            <EmptyWorkspace />
+            <TopBar title="Repository" />
+            <EmptyState />
           </>
         ) : (
           <Tabs
@@ -330,15 +380,15 @@ function WorkspaceShell() {
             onValueChange={(value) => setActiveTab(value as typeof activeTab)}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <WorkspaceTopBar title={workspace.repository.sourceRepoFullName}>
-              <StatusBadge status={workspace.repository.importStatus} />
+            <TopBar title={repoDetail.repository.sourceRepoFullName}>
+              <StatusBadge status={repoDetail.repository.importStatus} />
               <div className="ml-auto flex items-center gap-1.5">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
                       variant="ghost"
                       size="icon"
-                      aria-label="Workspace actions"
+                      aria-label="Repository actions"
                       className="text-muted-foreground hover:text-foreground"
                     >
                       <DotsThreeVerticalIcon weight="bold" />
@@ -367,29 +417,40 @@ function WorkspaceShell() {
                       {isCleaningSandbox ? 'Cleaning…' : 'Clean sandbox'}
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onSelect={(e) => {
+                        e.preventDefault();
+                        setShowDeleteRepoDialog(true);
+                      }}
+                    >
+                      <TrashIcon weight="bold" />
+                      Delete repository
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuLabel>Summary</DropdownMenuLabel>
                     <div className="px-2 py-1.5 text-xs text-muted-foreground">
                       <div className="flex justify-between gap-4">
                         <span>Framework</span>
                         <span className="truncate text-foreground">
-                          {workspace.repository.detectedFramework ?? 'Unknown'}
+                          {repoDetail.repository.detectedFramework ?? 'Unknown'}
                         </span>
                       </div>
                       <div className="mt-1 flex justify-between gap-4">
                         <span>Files indexed</span>
-                        <span className="text-foreground">{workspace.fileCount}</span>
+                        <span className="text-foreground">{repoDetail.fileCount}</span>
                       </div>
                       <div className="mt-1 flex justify-between gap-4">
                         <span>Languages</span>
                         <span className="max-w-[60%] truncate text-right text-foreground">
-                          {workspace.repository.detectedLanguages.join(', ') || 'Unknown'}
+                          {repoDetail.repository.detectedLanguages.join(', ') || 'Unknown'}
                         </span>
                       </div>
                     </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-            </WorkspaceTopBar>
+            </TopBar>
 
             <TabsList className="border-b border-border px-4">
               <TabsTrigger value="chat">Chat</TabsTrigger>
@@ -476,11 +537,68 @@ function WorkspaceShell() {
           </Tabs>
         )}
       </SidebarInset>
+
+      {/* Confirm delete thread dialog */}
+      <Dialog open={threadToDelete !== null} onOpenChange={(open) => !open && setThreadToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete thread</DialogTitle>
+            <DialogDescription>
+              This will permanently delete this thread and all its messages. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="secondary" disabled={isDeletingThread}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isDeletingThread}
+              onClick={() => void handleDeleteThread()}
+            >
+              <TrashIcon weight="bold" />
+              {isDeletingThread ? 'Deleting…' : 'Delete thread'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirm delete repository dialog */}
+      <Dialog open={showDeleteRepoDialog} onOpenChange={setShowDeleteRepoDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete repository</DialogTitle>
+            <DialogDescription>
+              This will permanently delete this repository and all its threads, messages, analysis artifacts, jobs, and
+              indexed files. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="secondary" disabled={isDeletingRepo}>
+                Cancel
+              </Button>
+            </DialogClose>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isDeletingRepo}
+              onClick={() => void handleDeleteRepo()}
+            >
+              <TrashIcon weight="bold" />
+              {isDeletingRepo ? 'Deleting…' : 'Delete repository'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
 
-function WorkspaceTopBar({ title, children }: { title: string; children?: React.ReactNode }) {
+function TopBar({ title, children }: { title: string; children?: React.ReactNode }) {
   return (
     <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-3 md:px-4">
       <SidebarTrigger />
@@ -741,7 +859,7 @@ function AuthButton({ size = 'default' }: { size?: 'default' | 'sm' }) {
   );
 }
 
-function EmptyWorkspace() {
+function EmptyState() {
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-5 p-10 text-center">
       <Logo size={64} hero />

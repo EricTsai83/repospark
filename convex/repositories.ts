@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import { mutation, query, internalQuery } from './_generated/server';
+import { mutation, query, internalQuery, internalMutation } from './_generated/server';
 import { requireViewerIdentity } from './lib/auth';
 import { makeRepositoryTitle, parseGitHubUrl } from './lib/github';
 
@@ -17,7 +17,7 @@ export const listRepositories = query({
   },
 });
 
-export const getWorkspace = query({
+export const getRepositoryDetail = query({
   args: {
     repositoryId: v.id('repositories'),
   },
@@ -101,7 +101,7 @@ export const createRepositoryImport = mutation({
       defaultThreadId = await ctx.db.insert('threads', {
         repositoryId,
         ownerTokenIdentifier: identity.tokenIdentifier,
-        title: `${makeRepositoryTitle(parsed.fullName)} workspace`,
+        title: `${makeRepositoryTitle(parsed.fullName)} chat`,
         mode: 'fast',
         lastMessageAt: Date.now(),
       });
@@ -114,7 +114,7 @@ export const createRepositoryImport = mutation({
     }
 
     if (!repositoryId || !repository) {
-      throw new Error('Failed to create repository workspace.');
+      throw new Error('Failed to create repository.');
     }
 
     const now = Date.now();
@@ -156,6 +156,125 @@ export const createRepositoryImport = mutation({
       jobId,
       defaultThreadId,
     };
+  },
+});
+
+export const deleteRepository = mutation({
+  args: {
+    repositoryId: v.id('repositories'),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireViewerIdentity(ctx);
+    const repository = await ctx.db.get(args.repositoryId);
+    if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+      throw new Error('Repository not found.');
+    }
+
+    // Delete the repository immediately so it disappears from the UI
+    await ctx.db.delete(args.repositoryId);
+
+    // Schedule cascading deletion of all related data
+    await ctx.scheduler.runAfter(0, internal.repositories.cascadeDeleteRepository, {
+      repositoryId: args.repositoryId,
+    });
+  },
+});
+
+export const cascadeDeleteRepository = internalMutation({
+  args: {
+    repositoryId: v.id('repositories'),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = 200;
+    let needsContinuation = false;
+
+    // Delete threads and their messages
+    const threads = await ctx.db
+      .query('threads')
+      .withIndex('by_repositoryId_and_lastMessageAt', (q) => q.eq('repositoryId', args.repositoryId))
+      .take(50);
+    for (const thread of threads) {
+      const messages = await ctx.db
+        .query('messages')
+        .withIndex('by_threadId', (q) => q.eq('threadId', thread._id))
+        .take(batchSize);
+      for (const message of messages) {
+        await ctx.db.delete(message._id);
+      }
+      if (messages.length < batchSize) {
+        await ctx.db.delete(thread._id);
+      } else {
+        needsContinuation = true;
+      }
+    }
+    if (threads.length === 50) needsContinuation = true;
+
+    // Delete jobs
+    const jobs = await ctx.db
+      .query('jobs')
+      .withIndex('by_repositoryId', (q) => q.eq('repositoryId', args.repositoryId))
+      .take(batchSize);
+    for (const job of jobs) {
+      await ctx.db.delete(job._id);
+    }
+    if (jobs.length === batchSize) needsContinuation = true;
+
+    // Delete analysis artifacts
+    const artifacts = await ctx.db
+      .query('analysisArtifacts')
+      .withIndex('by_repositoryId', (q) => q.eq('repositoryId', args.repositoryId))
+      .take(batchSize);
+    for (const artifact of artifacts) {
+      await ctx.db.delete(artifact._id);
+    }
+    if (artifacts.length === batchSize) needsContinuation = true;
+
+    // Delete repo chunks
+    const chunks = await ctx.db
+      .query('repoChunks')
+      .withIndex('by_repositoryId_and_path', (q) => q.eq('repositoryId', args.repositoryId))
+      .take(batchSize);
+    for (const chunk of chunks) {
+      await ctx.db.delete(chunk._id);
+    }
+    if (chunks.length === batchSize) needsContinuation = true;
+
+    // Delete repo files
+    const files = await ctx.db
+      .query('repoFiles')
+      .withIndex('by_repositoryId_and_path', (q) => q.eq('repositoryId', args.repositoryId))
+      .take(batchSize);
+    for (const file of files) {
+      await ctx.db.delete(file._id);
+    }
+    if (files.length === batchSize) needsContinuation = true;
+
+    // Delete imports
+    const imports = await ctx.db
+      .query('imports')
+      .withIndex('by_repositoryId', (q) => q.eq('repositoryId', args.repositoryId))
+      .take(batchSize);
+    for (const imp of imports) {
+      await ctx.db.delete(imp._id);
+    }
+    if (imports.length === batchSize) needsContinuation = true;
+
+    // Delete sandboxes
+    const sandboxes = await ctx.db
+      .query('sandboxes')
+      .withIndex('by_repositoryId', (q) => q.eq('repositoryId', args.repositoryId))
+      .take(batchSize);
+    for (const sandbox of sandboxes) {
+      await ctx.db.delete(sandbox._id);
+    }
+    if (sandboxes.length === batchSize) needsContinuation = true;
+
+    // Self-schedule if any table still has remaining records
+    if (needsContinuation) {
+      await ctx.scheduler.runAfter(0, internal.repositories.cascadeDeleteRepository, {
+        repositoryId: args.repositoryId,
+      });
+    }
   },
 });
 
