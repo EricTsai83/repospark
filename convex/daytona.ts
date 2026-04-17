@@ -34,12 +34,25 @@ export type SandboxProvisionResult = {
 
 export async function provisionSandbox(options: CreateSandboxOptions): Promise<SandboxProvisionResult> {
   const daytona = createDaytonaClient();
+  const sandboxName = `architect-${safeLabel(options.repositoryKey)}`;
+
+  // Clean up any pre-existing Daytona sandbox with the same name to avoid
+  // "already exists" conflicts. This handles both DB-tracked sandboxes and
+  // orphans left behind by previously failed imports.
+  try {
+    const existing = await daytona.get(sandboxName);
+    await daytona.delete(existing);
+    console.log(`[daytona] Deleted pre-existing sandbox: ${sandboxName}`);
+  } catch {
+    // Sandbox doesn't exist on Daytona — no cleanup needed
+  }
+
   const networkAllowList = process.env.DAYTONA_NETWORK_ALLOW_LIST;
   const cpuLimit = readNumberEnv('DAYTONA_CPU_LIMIT', DEFAULT_CPU_LIMIT);
   const memoryLimitGiB = readNumberEnv('DAYTONA_MEMORY_GIB', DEFAULT_MEMORY_GIB);
   const diskLimitGiB = readNumberEnv('DAYTONA_DISK_GIB', DEFAULT_DISK_GIB);
   const sandbox = await daytona.create({
-    name: `architect-${safeLabel(options.repositoryKey)}`,
+    name: sandboxName,
     language: CodeLanguage.TYPESCRIPT,
     labels: {
       app: 'architect-agent',
@@ -64,8 +77,8 @@ export async function provisionSandbox(options: CreateSandboxOptions): Promise<S
     autoStopIntervalMinutes: sandbox.autoStopInterval ?? DEFAULT_AUTO_STOP_MINUTES,
     autoArchiveIntervalMinutes: sandbox.autoArchiveInterval ?? DEFAULT_AUTO_ARCHIVE_MINUTES,
     autoDeleteIntervalMinutes: sandbox.autoDeleteInterval ?? DEFAULT_AUTO_DELETE_MINUTES,
-    networkBlockAll: sandbox.networkBlockAll,
-    networkAllowList: sandbox.networkAllowList,
+    networkBlockAll: sandbox.networkBlockAll ?? false,
+    networkAllowList: sandbox.networkAllowList ?? undefined,
   };
 }
 

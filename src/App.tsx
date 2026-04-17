@@ -267,7 +267,12 @@ function RepositoryShell() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{repository.sourceRepoFullName}</p>
                     <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                      {repository.detectedFramework ?? 'Framework pending'}
+                      {[
+                        repository.defaultBranch,
+                        repository.detectedFramework,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ') || 'Import pending'}
                     </p>
                   </div>
                 </button>
@@ -431,6 +436,12 @@ function RepositoryShell() {
                     <DropdownMenuLabel>Summary</DropdownMenuLabel>
                     <div className="px-2 py-1.5 text-xs text-muted-foreground">
                       <div className="flex justify-between gap-4">
+                        <span>Branch</span>
+                        <span className="truncate text-foreground">
+                          {repoDetail.repository.defaultBranch ?? 'Unknown'}
+                        </span>
+                      </div>
+                      <div className="mt-1 flex justify-between gap-4">
                         <span>Framework</span>
                         <span className="truncate text-foreground">
                           {repoDetail.repository.detectedFramework ?? 'Unknown'}
@@ -685,7 +696,7 @@ function ImportRepoDialog({ onImported }: { onImported: (repoId: RepositoryId, t
             placeholder="https://github.com/owner/repo"
             autoFocus
           />
-          <Input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="branch (optional)" />
+          <Input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="Branch (leave empty for repo default)" />
           {importError ? <p className="text-xs text-destructive">{importError}</p> : null}
           <DialogFooter>
             <DialogClose asChild>

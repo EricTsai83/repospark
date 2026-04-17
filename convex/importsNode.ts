@@ -42,6 +42,18 @@ export const runImportPipeline = internalAction({
         throw new Error('DAYTONA_API_KEY is missing. Add Daytona credentials before importing repositories.');
       }
 
+      // Archive the previous sandbox record in DB so it won't be referenced again.
+      // The Daytona-level cleanup (deleting the actual remote sandbox) is handled
+      // inside provisionSandbox via name-based lookup.
+      const existingSandbox = await ctx.runQuery(internal.imports.getExistingSandboxForRepo, {
+        repositoryId: importContext.repositoryId,
+      });
+      if (existingSandbox) {
+        await ctx.runMutation(internal.imports.archiveSandbox, {
+          sandboxId: existingSandbox.sandboxId,
+        });
+      }
+
       const sandbox = await provisionSandbox({
         repositoryKey: importContext.sourceRepoFullName,
         accessMode: importContext.accessMode,

@@ -28,6 +28,34 @@ export const getImportContext = internalQuery({
   },
 });
 
+export const getExistingSandboxForRepo = internalQuery({
+  args: {
+    repositoryId: v.id('repositories'),
+  },
+  handler: async (ctx, args) => {
+    const repository = await ctx.db.get(args.repositoryId);
+    if (!repository?.latestSandboxId) {
+      return null;
+    }
+    const sandbox = await ctx.db.get(repository.latestSandboxId);
+    if (!sandbox || sandbox.status === 'archived') {
+      return null;
+    }
+    return { sandboxId: sandbox._id, remoteId: sandbox.remoteId };
+  },
+});
+
+export const archiveSandbox = internalMutation({
+  args: {
+    sandboxId: v.id('sandboxes'),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.sandboxId, {
+      status: 'archived',
+    });
+  },
+});
+
 export const markImportRunning = internalMutation({
   args: {
     importId: v.id('imports'),
