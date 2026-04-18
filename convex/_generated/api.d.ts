@@ -17,6 +17,7 @@ import type * as githubCheck from "../githubCheck.js";
 import type * as imports from "../imports.js";
 import type * as importsNode from "../importsNode.js";
 import type * as lib_auth from "../lib/auth.js";
+import type * as lib_constants from "../lib/constants.js";
 import type * as lib_github from "../lib/github.js";
 import type * as lib_repoAnalysis from "../lib/repoAnalysis.js";
 import type * as ops from "../ops.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   imports: typeof imports;
   importsNode: typeof importsNode;
   "lib/auth": typeof lib_auth;
+  "lib/constants": typeof lib_constants;
   "lib/github": typeof lib_github;
   "lib/repoAnalysis": typeof lib_repoAnalysis;
   ops: typeof ops;

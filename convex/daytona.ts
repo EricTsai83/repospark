@@ -2,15 +2,17 @@
 
 import { CodeLanguage, Daytona, type Sandbox } from '@daytona/sdk';
 import { shouldReadFile, type RepositorySnapshot } from './lib/repoAnalysis';
+import {
+  DEFAULT_AUTO_STOP_MINUTES,
+  DEFAULT_AUTO_ARCHIVE_MINUTES,
+  DEFAULT_AUTO_DELETE_MINUTES,
+  MAX_LISTED_FILES,
+  MAX_TREE_DEPTH,
+} from './lib/constants';
 
-const DEFAULT_AUTO_STOP_MINUTES = 10;
-const DEFAULT_AUTO_ARCHIVE_MINUTES = 60 * 24;
-const DEFAULT_AUTO_DELETE_MINUTES = 60 * 24;
 const DEFAULT_CPU_LIMIT = 2;
 const DEFAULT_MEMORY_GIB = 4;
 const DEFAULT_DISK_GIB = 10;
-const MAX_LISTED_FILES = 400;
-const MAX_DEPTH = 6;
 
 type CreateSandboxOptions = {
   repositoryKey: string;
@@ -228,7 +230,7 @@ async function walkRepositoryTree(
   depth: number,
   acc: RepositorySnapshot['files'],
 ): Promise<RepositorySnapshot['files']> {
-  if (depth > MAX_DEPTH || acc.length >= MAX_LISTED_FILES) {
+  if (depth > MAX_TREE_DEPTH || acc.length >= MAX_LISTED_FILES) {
     return acc;
   }
 

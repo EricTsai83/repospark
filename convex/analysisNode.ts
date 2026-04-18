@@ -28,6 +28,8 @@ export const runDeepAnalysis = internalAction({
     });
 
     try {
+      // Cast required: Convex action ctx.runQuery cannot infer return types
+      // for functions defined in a different file (framework limitation).
       const context = (await ctx.runQuery(internal.analysis.getDeepAnalysisContext, {
         repositoryId: args.repositoryId,
       })) as DeepAnalysisContext;

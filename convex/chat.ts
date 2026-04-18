@@ -4,6 +4,12 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { mutation, query, internalAction, internalMutation, internalQuery } from './_generated/server';
 import { requireViewerIdentity } from './lib/auth';
+import {
+  MAX_CONTEXT_ARTIFACTS,
+  MAX_CONTEXT_MESSAGES,
+  MAX_RELEVANT_CHUNKS,
+  STREAM_FLUSH_THRESHOLD,
+} from './lib/constants';
 
 type ReplyContext = {
   ownerTokenIdentifier: string;
@@ -241,7 +247,7 @@ export const getReplyContext = internalQuery({
     const messages = await ctx.db
       .query('messages')
       .withIndex('by_threadId', (q) => q.eq('threadId', args.threadId))
-      .take(20);
+      .take(MAX_CONTEXT_MESSAGES);
 
     return {
       ownerTokenIdentifier: repository.ownerTokenIdentifier,
@@ -281,6 +287,8 @@ export const generateAssistantReply = internalAction({
     });
 
     try {
+      // Cast required: ctx.runAction/runQuery cannot infer return types for
+      // functions in the same file due to Convex TypeScript circularity limits.
       const replyContext = (await ctx.runQuery(internal.chat.getReplyContext, {
         threadId: args.threadId,
       })) as ReplyContext;
@@ -310,7 +318,7 @@ export const generateAssistantReply = internalAction({
       let lastFlushedLength = 0;
       for await (const delta of response.textStream) {
         content += delta;
-        if (content.length - lastFlushedLength >= 240) {
+        if (content.length - lastFlushedLength >= STREAM_FLUSH_THRESHOLD) {
           const nextDelta = content.slice(lastFlushedLength);
           lastFlushedLength = content.length;
           await ctx.runMutation(internal.chat.appendAssistantDelta, {
@@ -441,7 +449,7 @@ function buildUserPrompt(
   relevantChunks: Array<{ path: string; summary: string; content: string }>,
 ) {
   const artifactSection = context.artifacts
-    .slice(0, 6)
+    .slice(0, MAX_CONTEXT_ARTIFACTS)
     .map((artifact) => `## ${artifact.title}\n${artifact.summary}\n${artifact.contentMarkdown.slice(0, 1400)}`)
     .join('\n\n');
   const chunkSection = relevantChunks
@@ -508,6 +516,6 @@ function selectRelevantChunks(
       }, 0),
     }))
     .sort((left, right) => right.score - left.score)
-    .slice(0, 6)
+    .slice(0, MAX_RELEVANT_CHUNKS)
     .map(({ score: _score, ...chunk }) => chunk);
 }

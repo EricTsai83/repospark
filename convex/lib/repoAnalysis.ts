@@ -1,3 +1,5 @@
+import { MAX_CHUNKS_PER_FILE } from './constants';
+
 type FileNode = {
   path: string;
   parentPath: string;
@@ -230,7 +232,7 @@ function chunkText(path: string, content: string, chunkKind: 'code' | 'summary' 
     });
   }
 
-  return chunks.slice(0, 4);
+  return chunks.slice(0, MAX_CHUNKS_PER_FILE);
 }
 
 function summarizeChunk(path: string, content: string, chunkKind: 'code' | 'summary' | 'readme') {

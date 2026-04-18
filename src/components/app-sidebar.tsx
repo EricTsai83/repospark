@@ -5,7 +5,7 @@ import {
   ChatCircleIcon,
   TrashIcon,
 } from '@phosphor-icons/react';
-import type { Doc, Id } from '../../convex/_generated/dataModel';
+import type { Doc } from '../../convex/_generated/dataModel';
 import { ModeToggle } from '@/components/mode-toggle';
 import { Button } from '@/components/ui/button';
 import {
@@ -17,9 +17,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/logo';
 import { ImportRepoDialog } from '@/components/import-repo-dialog';
-
-type RepositoryId = Id<'repositories'>;
-type ThreadId = Id<'threads'>;
+import type { RepositoryId, ThreadId } from '@/lib/types';
 
 export function AppSidebar({
   repositories,

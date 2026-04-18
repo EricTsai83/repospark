@@ -2,11 +2,11 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AuthKitProvider, useAuth } from '@workos-inc/authkit-react';
 import { ConvexReactClient } from 'convex/react';
-import { ConvexProviderWithAuthKit } from './ConvexProviderWithAuthKit';
+import { ConvexProviderWithAuthKit } from '@/providers/convex-provider-with-auth-kit';
 import './index.css';
 import App from './App.tsx';
-import { ErrorBoundary } from './ErrorBoundary.tsx';
-import { ThemeProvider } from './components/theme-provider';
+import { ErrorBoundary } from '@/providers/error-boundary';
+import { ThemeProvider } from '@/providers/theme-provider';
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
 

@@ -49,6 +49,8 @@ type ExpiredSandbox = {
 export const sweepExpiredSandboxes = internalAction({
   args: {},
   handler: async (ctx) => {
+    // Cast required: Convex action ctx.runQuery cannot infer return types
+    // for functions defined in a different file (framework limitation).
     const expired = (await ctx.runQuery(
       internal.ops.getExpiredSandboxes,
       {},

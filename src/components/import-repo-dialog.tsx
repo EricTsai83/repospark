@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useMutation } from 'convex/react';
 import { PlusIcon } from '@phosphor-icons/react';
 import { api } from '../../convex/_generated/api';
-import type { Id } from '../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -15,9 +14,7 @@ import {
   DialogTrigger,
   DialogClose,
 } from '@/components/ui/dialog';
-
-type RepositoryId = Id<'repositories'>;
-type ThreadId = Id<'threads'>;
+import type { RepositoryId, ThreadId } from '@/lib/types';
 
 export function ImportRepoDialog({
   onImported,

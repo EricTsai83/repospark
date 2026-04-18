@@ -1,12 +1,11 @@
 import { WarningCircleIcon, PaperPlaneTiltIcon, ArrowsClockwiseIcon } from '@phosphor-icons/react';
-import type { Doc, Id } from '../../convex/_generated/dataModel';
+import type { Doc } from '../../convex/_generated/dataModel';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-
-type ThreadId = Id<'threads'>;
+import type { ThreadId, ChatMode } from '@/lib/types';
 
 export function ChatPanel({
   selectedThreadId,
@@ -25,8 +24,8 @@ export function ChatPanel({
   messages: Doc<'messages'>[] | undefined;
   chatInput: string;
   setChatInput: (v: string) => void;
-  chatMode: 'fast' | 'deep';
-  setChatMode: (v: 'fast' | 'deep') => void;
+  chatMode: ChatMode;
+  setChatMode: (v: ChatMode) => void;
   isSending: boolean;
   onSendMessage: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
   deepModeAvailable: boolean;
@@ -83,7 +82,7 @@ export function ChatPanel({
             className="min-h-20 resize-none border-border"
           />
           <div className="flex items-center justify-between gap-3">
-            <Select value={chatMode} onValueChange={(v) => setChatMode(v as 'fast' | 'deep')}>
+            <Select value={chatMode} onValueChange={(v) => setChatMode(v as ChatMode)}>
               <SelectTrigger className="h-8 w-[160px] text-xs">
                 <SelectValue />
               </SelectTrigger>
