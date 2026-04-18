@@ -192,20 +192,12 @@ function ThreadsSection({
 
 /**
  * Static header – "Threads" label + "new thread" button.
- * Only re-renders when `isCreatingThread` flips (essentially never during
- * normal repo navigation).
  *
- * Why this works without useRef: ThreadsSection passes `handleCreateThread`
- * which changes on repo switch, BUT ThreadsSection itself unmounts/remounts
- * when `repositoryId` changes (keyed in the parent). On mount the memo
- * baseline is fresh, and between mounts `isCreatingThread` is the only prop
- * that can change. No ref hack needed.
- *
- * ── Wait, actually ThreadsSection does NOT unmount on repo switch (the
- * parent condition is `selectedRepositoryId !== null` which stays true).
- * So `handleCreateThread` DOES change in-place. To keep the header stable
- * we use a custom comparator that only checks `isCreatingThread`, since the
- * callback identity doesn't affect visual output.
+ * ThreadsSection does NOT unmount on repo switch (the parent condition is
+ * `selectedRepositoryId !== null` which stays true), so `handleCreateThread`
+ * changes identity in-place when the user picks a different repo. We rely on
+ * React's default shallow-equality memo so the button always closes over the
+ * current repositoryId / chatMode.
  */
 const ThreadsHeader = memo(function ThreadsHeader({
   isCreatingThread,
