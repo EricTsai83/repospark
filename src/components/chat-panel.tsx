@@ -134,7 +134,7 @@ function EmptyChatHint() {
 function MessageBubble({ message }: { message: Doc<'messages'> }) {
   const isUser = message.role === 'user';
   return (
-    <Card className={cn('p-4', isUser ? 'bg-muted' : 'border-transparent bg-transparent px-0')}>
+    <Card className={cn('p-4', isUser ? 'bg-muted border-transparent' : 'border-transparent bg-transparent px-0')}>
       <div className="mb-1 flex items-center justify-between gap-3">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{message.role}</p>
         <p className="text-[10px] text-muted-foreground">{message.status}</p>

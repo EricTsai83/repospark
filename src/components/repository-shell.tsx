@@ -21,7 +21,6 @@ export function RepositoryShell() {
   const repositories = useQuery(api.repositories.listRepositories);
   const requestDeepAnalysis = useMutation(api.analysis.requestDeepAnalysis);
   const sendMessageMutation = useMutation(api.chat.sendMessage);
-  const createThreadMutation = useMutation(api.chat.createThread);
   const syncRepositoryMutation = useMutation(api.repositories.syncRepository);
   const deleteThreadMutation = useMutation(api.chat.deleteThread);
   const deleteRepositoryMutation = useMutation(api.repositories.deleteRepository);
@@ -57,16 +56,6 @@ export function RepositoryShell() {
   // Check GitHub for new remote commits on tab-focus and repo-switch
   useCheckForUpdates(selectedRepositoryId);
 
-  useEffect(() => {
-    if (!repoDetail?.threads?.length) {
-      setSelectedThreadId(null);
-      return;
-    }
-    const preferred = repoDetail.repository.defaultThreadId ?? repoDetail.threads[0]?._id;
-    if (!selectedThreadId || !repoDetail.threads.some((t) => t._id === selectedThreadId)) {
-      setSelectedThreadId(preferred ?? null);
-    }
-  }, [selectedThreadId, repoDetail]);
 
   const messages = useQuery(api.chat.listMessages, selectedThreadId ? { threadId: selectedThreadId } : 'skip');
   const artifacts = useMemo(() => repoDetail?.artifacts ?? [], [repoDetail?.artifacts]);
@@ -82,14 +71,6 @@ export function RepositoryShell() {
       },
       [selectedThreadId, chatInput, chatMode, sendMessageMutation],
     ),
-  );
-
-  const [isCreatingThread, handleCreateThread] = useAsyncCallback(
-    useCallback(async () => {
-      if (!selectedRepositoryId) return;
-      const threadId = await createThreadMutation({ repositoryId: selectedRepositoryId, mode: chatMode });
-      setSelectedThreadId(threadId);
-    }, [selectedRepositoryId, chatMode, createThreadMutation]),
   );
 
   const [isRunningAnalysis, handleRunAnalysis] = useAsyncCallback(
@@ -130,13 +111,16 @@ export function RepositoryShell() {
       <AppSidebar
         repositories={repositories}
         selectedRepositoryId={selectedRepositoryId}
-        onSelectRepository={setSelectedRepositoryId}
+        onSelectRepository={(id) => {
+          setSelectedRepositoryId(id);
+          setSelectedThreadId(null);
+          setThreadToDelete(null);
+        }}
         selectedThreadId={selectedThreadId}
         onSelectThread={setSelectedThreadId}
-        threads={repoDetail?.threads ?? null}
-        isCreatingThread={isCreatingThread}
-        onCreateThread={() => void handleCreateThread()}
         onDeleteThread={setThreadToDelete}
+        chatMode={chatMode}
+        defaultThreadId={repoDetail?.repository.defaultThreadId}
         onImported={(repoId, threadId) => {
           setSelectedRepositoryId(repoId);
           if (threadId) setSelectedThreadId(threadId);
