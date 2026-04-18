@@ -162,6 +162,7 @@ export function SidebarMenuButton({
   children,
   className,
   selected,
+  'aria-current': ariaCurrent,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { selected?: boolean }) {
   return (
@@ -174,6 +175,7 @@ export function SidebarMenuButton({
           : 'border-transparent text-muted-foreground hover:bg-muted/60 hover:text-foreground',
         className,
       )}
+      aria-current={ariaCurrent ?? (selected ? 'page' : undefined)}
       {...props}
     >
       {children}

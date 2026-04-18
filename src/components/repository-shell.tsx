@@ -56,16 +56,6 @@ export function RepositoryShell() {
   // Check GitHub for new remote commits on tab-focus and repo-switch
   useCheckForUpdates(selectedRepositoryId);
 
-  useEffect(() => {
-    if (!repoDetail?.threads?.length) {
-      setSelectedThreadId(null);
-      return;
-    }
-    const preferred = repoDetail.repository.defaultThreadId ?? repoDetail.threads[0]?._id;
-    if (!selectedThreadId || !repoDetail.threads.some((t) => t._id === selectedThreadId)) {
-      setSelectedThreadId(preferred ?? null);
-    }
-  }, [selectedThreadId, repoDetail]);
 
   const messages = useQuery(api.chat.listMessages, selectedThreadId ? { threadId: selectedThreadId } : 'skip');
   const artifacts = useMemo(() => repoDetail?.artifacts ?? [], [repoDetail?.artifacts]);
@@ -121,11 +111,16 @@ export function RepositoryShell() {
       <AppSidebar
         repositories={repositories}
         selectedRepositoryId={selectedRepositoryId}
-        onSelectRepository={setSelectedRepositoryId}
+        onSelectRepository={(id) => {
+          setSelectedRepositoryId(id);
+          setSelectedThreadId(null);
+          setThreadToDelete(null);
+        }}
         selectedThreadId={selectedThreadId}
         onSelectThread={setSelectedThreadId}
         onDeleteThread={setThreadToDelete}
         chatMode={chatMode}
+        defaultThreadId={repoDetail?.repository.defaultThreadId}
         onImported={(repoId, threadId) => {
           setSelectedRepositoryId(repoId);
           if (threadId) setSelectedThreadId(threadId);

@@ -30,6 +30,7 @@ export function AppSidebar({
   onSelectThread,
   onDeleteThread,
   chatMode,
+  defaultThreadId,
   onImported,
   authButton,
 }: {
@@ -40,6 +41,7 @@ export function AppSidebar({
   onSelectThread: (id: ThreadId) => void;
   onDeleteThread: (id: ThreadId) => void;
   chatMode: ChatMode;
+  defaultThreadId?: ThreadId;
   onImported: (repoId: RepositoryId, threadId: ThreadId | null) => void;
   authButton: React.ReactNode;
 }) {
@@ -113,6 +115,7 @@ export function AppSidebar({
             onSelectThread={onSelectThread}
             onDeleteThread={onDeleteThread}
             chatMode={chatMode}
+            defaultThreadId={defaultThreadId}
           />
         )}
       </SidebarContent>
@@ -137,12 +140,14 @@ function ThreadsSection({
   onSelectThread,
   onDeleteThread,
   chatMode,
+  defaultThreadId,
 }: {
   repositoryId: RepositoryId;
   selectedThreadId: ThreadId | null;
   onSelectThread: (id: ThreadId) => void;
   onDeleteThread: (id: ThreadId) => void;
   chatMode: ChatMode;
+  defaultThreadId?: ThreadId;
 }) {
   const threads = useQuery(api.chat.listThreads, { repositoryId });
   const createThreadMutation = useMutation(api.chat.createThread);
@@ -153,6 +158,17 @@ function ThreadsSection({
       onSelectThread(threadId);
     }, [repositoryId, chatMode, createThreadMutation, onSelectThread]),
   );
+
+  useEffect(() => {
+    if (!threads?.length) {
+      onSelectThread(null);
+      return;
+    }
+    const preferred = defaultThreadId ?? threads[0]?._id;
+    if (!selectedThreadId || !threads.some((t) => t._id === selectedThreadId)) {
+      onSelectThread(preferred ?? null);
+    }
+  }, [threads, defaultThreadId, selectedThreadId, onSelectThread]);
 
   return (
     <>
@@ -191,33 +207,30 @@ function ThreadsSection({
  * we use a custom comparator that only checks `isCreatingThread`, since the
  * callback identity doesn't affect visual output.
  */
-const ThreadsHeader = memo(
-  function ThreadsHeader({
-    isCreatingThread,
-    onCreateThread,
-  }: {
-    isCreatingThread: boolean;
-    onCreateThread: () => void;
-  }) {
-    return (
-      <div className="flex items-center justify-between px-1 pb-1">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Threads</p>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6 text-muted-foreground hover:text-foreground"
-          disabled={isCreatingThread}
-          onClick={onCreateThread}
-          aria-label="New thread"
-          title="New thread"
-        >
-          <PlusIcon weight="bold" size={14} />
-        </Button>
-      </div>
-    );
-  },
-  (prev, next) => prev.isCreatingThread === next.isCreatingThread,
-);
+const ThreadsHeader = memo(function ThreadsHeader({
+  isCreatingThread,
+  onCreateThread,
+}: {
+  isCreatingThread: boolean;
+  onCreateThread: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between px-1 pb-1">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Threads</p>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 text-muted-foreground hover:text-foreground"
+        disabled={isCreatingThread}
+        onClick={onCreateThread}
+        aria-label="New thread"
+        title="New thread"
+      >
+        <PlusIcon weight="bold" size={14} />
+      </Button>
+    </div>
+  );
+});
 
 /**
  * Memoised thread list – re-renders when threads data or selection changes,
