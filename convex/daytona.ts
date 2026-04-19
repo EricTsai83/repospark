@@ -125,11 +125,10 @@ export async function cloneRepositoryInSandbox(args: {
   remoteId: string;
   url: string;
   branch?: string;
-  accessMode: 'public' | 'private';
   token?: string;
 }) {
   const sandbox = await getSandbox(args.remoteId);
-  await sandbox.git.clone(args.url, 'repo', args.branch, undefined, args.accessMode === 'private' ? 'git' : undefined, args.token);
+  await sandbox.git.clone(args.url, 'repo', args.branch, undefined, args.token ? 'git' : undefined, args.token);
 
   const branchCommand = await sandbox.process.executeCommand('git branch --show-current', 'repo');
   const shaCommand = await sandbox.process.executeCommand('git rev-parse HEAD', 'repo');

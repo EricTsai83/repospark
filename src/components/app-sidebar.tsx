@@ -1,10 +1,12 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import {
   PlusIcon,
   MagnifyingGlassIcon,
   ChatCircleIcon,
   TrashIcon,
+  GlobeIcon,
+  LockIcon,
 } from '@phosphor-icons/react';
 import type { Doc } from '../../convex/_generated/dataModel';
 import { api } from '../../convex/_generated/api';
@@ -19,7 +21,9 @@ import {
 } from '@/components/ui/sidebar';
 import { Logo } from '@/components/logo';
 import { ImportRepoDialog } from '@/components/import-repo-dialog';
+import { GitHubReposDialog } from '@/components/github-repos-dialog';
 import { useAsyncCallback } from '@/hooks/use-async-callback';
+import { useGitHubConnection } from '@/hooks/use-github-connection';
 import type { RepositoryId, ThreadId, ChatMode } from '@/lib/types';
 
 export function AppSidebar({
@@ -93,6 +97,11 @@ export function AppSidebar({
                 selected={selectedRepositoryId === repository._id}
                 onClick={() => onSelectRepository(repository._id)}
               >
+                {repository.visibility === 'private' ? (
+                  <LockIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" title="Private (authorized)" />
+                ) : (
+                  <GlobeIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" title="Public" />
+                )}
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">{repository.sourceRepoFullName}</p>
                 {/* Orange dot when remote has new commits */}
                 {repository.latestRemoteSha &&
@@ -121,8 +130,11 @@ export function AppSidebar({
       </SidebarContent>
 
       <SidebarFooter>
+        <GitHubStatusSection />
         <ModeToggle />
-        <div className="ml-auto">{authButton}</div>
+        <div className="ml-auto flex items-center gap-2">
+          {authButton}
+        </div>
       </SidebarFooter>
     </Sidebar>
   );
@@ -273,3 +285,33 @@ const ThreadsList = memo(function ThreadsList({
     </>
   );
 });
+
+function GitHubStatusSection() {
+  const { isConnected, accountLogin, installationId, repositorySelection, isLoading } = useGitHubConnection();
+
+  if (isLoading) {
+    return null;
+  }
+
+  if (!isConnected) {
+    return (
+      <p className="text-center text-[11px] text-muted-foreground">
+        GitHub not connected
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-center text-[11px] text-muted-foreground">
+        GitHub connected as <span className="font-medium text-foreground">{accountLogin}</span>
+        {repositorySelection === 'selected' && (
+          <span className="block text-[10px]">(selected repos only)</span>
+        )}
+      </p>
+      {installationId && (
+        <GitHubReposDialog installationId={installationId} repositorySelection={repositorySelection} />
+      )}
+    </div>
+  );
+}

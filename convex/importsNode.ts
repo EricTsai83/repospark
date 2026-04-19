@@ -5,6 +5,7 @@ import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { internalAction } from './_generated/server';
 import { cloneRepositoryInSandbox, collectRepositorySnapshot, isDaytonaConfigured, provisionSandbox, stopSandbox } from './daytona';
+import { getInstallationAccessToken } from './githubAppNode';
 import {
   buildRepositoryManifest,
   createArchitectureArtifactMarkdown,
@@ -42,6 +43,52 @@ export const runImportPipeline = internalAction({
         throw new Error('DAYTONA_API_KEY is missing. Add Daytona credentials before importing repositories.');
       }
 
+      // -----------------------------------------------------------------------
+      // Early permission check: verify the GitHub App installation can access
+      // this repo BEFORE provisioning a sandbox. This avoids wasting resources
+      // when the repo is not included in the installation's repo selection.
+      // -----------------------------------------------------------------------
+      const installationId: number | null = await ctx.runQuery(
+        internal.github.getInstallationIdForOwner,
+        { ownerTokenIdentifier: importContext.ownerTokenIdentifier },
+      );
+
+      if (!installationId) {
+        throw new Error(
+          'No active GitHub App installation found. Please connect your GitHub account first.',
+        );
+      }
+
+      // Parse owner/repo from sourceRepoFullName (format: "owner/repo")
+      const [repoOwner, repoName] = importContext.sourceRepoFullName.split('/');
+      if (!repoOwner || !repoName) {
+        throw new Error(`Invalid repository name: ${importContext.sourceRepoFullName}`);
+      }
+
+      const accessCheck = (await ctx.runAction(internal.githubAppNode.checkRepoAccess, {
+        installationId,
+        owner: repoOwner,
+        repo: repoName,
+      })) as { accessible: boolean; isPrivate?: boolean; message?: string };
+
+      if (!accessCheck.accessible) {
+        throw new Error(
+          accessCheck.message ??
+            `Repository "${importContext.sourceRepoFullName}" is not accessible with your current GitHub App permissions.`,
+        );
+      }
+
+      // Update the repository's visibility now that we know the actual value
+      const detectedVisibility = accessCheck.isPrivate ? 'private' as const : 'public' as const;
+      await ctx.runMutation(internal.repositories.updateRepoVisibility, {
+        repositoryId: importContext.repositoryId,
+        visibility: detectedVisibility,
+      });
+
+      // -----------------------------------------------------------------------
+      // Repo is accessible — proceed with sandbox provisioning
+      // -----------------------------------------------------------------------
+
       // Archive the previous sandbox record in DB so it won't be referenced again.
       // The Daytona-level cleanup (deleting the actual remote sandbox) is handled
       // inside provisionSandbox via name-based lookup.
@@ -78,11 +125,22 @@ export const runImportPipeline = internalAction({
         networkAllowList: sandbox.networkAllowList,
       });
 
+      // Retrieve GitHub access token (already verified accessible above)
+      let githubToken: string | undefined;
+      try {
+        githubToken = await getInstallationAccessToken(installationId);
+      } catch (error) {
+        console.warn(
+          '[import] GitHub token unavailable, falling back to unauthenticated:',
+          error instanceof Error ? error.message : error,
+        );
+      }
+
       const cloneResult = await cloneRepositoryInSandbox({
         remoteId: sandbox.remoteId,
         url: importContext.sourceUrl,
         branch: importContext.branch,
-        accessMode: importContext.accessMode,
+        token: githubToken,
       });
 
       const snapshot = await collectRepositorySnapshot(sandbox.remoteId, sandbox.repoPath);
@@ -162,10 +220,31 @@ export const runImportPipeline = internalAction({
         );
       }
     } catch (error) {
+      let errorMessage = error instanceof Error ? error.message : 'Unknown import error';
+
+      // Provide helpful error message for auth/access failures.
+      // When a repo is not included in the GitHub App installation,
+      // clone failures typically surface as "not found" (404) or permission denied.
+      const lowerMsg = errorMessage.toLowerCase();
+      const isAuthFailure =
+        lowerMsg.includes('not found') ||
+        lowerMsg.includes('authentication failed') ||
+        lowerMsg.includes('could not read from remote') ||
+        lowerMsg.includes('private') ||
+        lowerMsg.includes('401') ||
+        lowerMsg.includes('403') ||
+        lowerMsg.includes('404') ||
+        lowerMsg.includes('permission denied');
+
+      if (isAuthFailure) {
+        errorMessage +=
+          '\n\nThis repository may not be accessible. Make sure it is included in your GitHub App installation. You can update your repo selection in GitHub Settings > Applications.';
+      }
+
       await ctx.runMutation(internal.imports.markImportFailed, {
         importId: args.importId,
         jobId: importContext.jobId,
-        errorMessage: error instanceof Error ? error.message : 'Unknown import error',
+        errorMessage,
       });
     }
   },

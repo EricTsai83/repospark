@@ -249,4 +249,27 @@ export default defineSchema({
     .index('by_threadId', ['threadId'])
     .index('by_threadId_and_status', ['threadId', 'status'])
     .index('by_jobId', ['jobId']),
+
+  githubInstallations: defineTable({
+    ownerTokenIdentifier: v.string(),
+    installationId: v.number(),
+    accountLogin: v.string(),
+    accountType: v.union(v.literal('User'), v.literal('Organization')),
+    status: v.union(v.literal('active'), v.literal('suspended'), v.literal('deleted')),
+    repositorySelection: v.union(v.literal('all'), v.literal('selected')),
+    connectedAt: v.number(),
+    suspendedAt: v.optional(v.number()),
+    deletedAt: v.optional(v.number()),
+  })
+    .index('by_ownerTokenIdentifier', ['ownerTokenIdentifier'])
+    .index('by_installationId', ['installationId']),
+
+  githubOAuthStates: defineTable({
+    state: v.string(),
+    ownerTokenIdentifier: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    consumed: v.boolean(),
+  })
+    .index('by_state', ['state']),
 });

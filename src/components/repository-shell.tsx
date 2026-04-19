@@ -14,7 +14,9 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { AuthButton } from '@/components/auth-button';
 import { EmptyState } from '@/components/empty-state';
 import { useCheckForUpdates } from '@/hooks/use-check-for-updates';
+import { useGitHubConnection } from '@/hooks/use-github-connection';
 import { useAsyncCallback } from '@/hooks/use-async-callback';
+import { OnboardingConnectGitHub } from '@/components/onboarding-connect-github';
 import type { RepositoryId, ThreadId, ChatMode } from '@/lib/types';
 
 export function RepositoryShell() {
@@ -56,6 +58,8 @@ export function RepositoryShell() {
   // Check GitHub for new remote commits on tab-focus and repo-switch
   useCheckForUpdates(selectedRepositoryId);
 
+  // GitHub connection status — used to show onboarding when not connected
+  const { isConnected: isGitHubConnected, isLoading: isGitHubLoading } = useGitHubConnection();
 
   const messages = useQuery(api.chat.listMessages, selectedThreadId ? { threadId: selectedThreadId } : 'skip');
   const artifacts = useMemo(() => repoDetail?.artifacts ?? [], [repoDetail?.artifacts]);
@@ -138,7 +142,9 @@ export function RepositoryShell() {
           onRunAnalysis={() => setShowAnalysisDialog(true)}
         />
 
-        {!selectedRepositoryId ? (
+        {!isGitHubLoading && !isGitHubConnected ? (
+          <OnboardingConnectGitHub />
+        ) : !selectedRepositoryId ? (
           <EmptyState />
         ) : (
           <Tabs
