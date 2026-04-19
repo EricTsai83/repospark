@@ -37,7 +37,7 @@ Missing tests:
 - A test that deleting a repository with `latestSandboxId` schedules remote cleanup.
 - A test that repository deletion does not leave a sandbox only on Daytona.
 
-### 2. Sandbox naming is not collision-safe and can delete the wrong sandbox
+### 2. [已完成] Sandbox naming is not collision-safe and can delete the wrong sandbox
 
 Why this matters:
 - `provisionSandbox` uses `architect-${safeLabel(repositoryKey)}`.
@@ -59,7 +59,7 @@ Missing tests:
 - A unit test proving two different repository keys cannot collide.
 - A regression test that provisioning repo B cannot delete repo A's sandbox.
 
-### 3. Deleting a repository during an active import can leave the import pipeline in an inconsistent state
+### 3. [已完成] Deleting a repository during an active import can leave the import pipeline in an inconsistent state
 
 Why this matters:
 - `deleteRepository` removes the repository before the import action finishes.

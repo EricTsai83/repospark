@@ -14,7 +14,8 @@ import {
   createRepoFileRecords,
 } from './lib/repoAnalysis';
 
-type ImportContext = {
+type ReadyImportContext = {
+  kind: 'ready';
   repositoryId: Id<'repositories'>;
   jobId: Id<'jobs'>;
   branch?: string;
@@ -24,21 +25,53 @@ type ImportContext = {
   sourceRepoFullName: string;
 };
 
+type CancelledImportContext = {
+  kind: 'cancelled';
+  jobId: Id<'jobs'>;
+  reason: string;
+};
+
+type ImportContext = ReadyImportContext | CancelledImportContext;
+
 export const runImportPipeline = internalAction({
   args: {
     importId: v.id('imports'),
   },
   handler: async (ctx, args) => {
-    const importContext = (await ctx.runQuery(internal.imports.getImportContext, {
-      importId: args.importId,
-    })) as ImportContext;
-
-    await ctx.runMutation(internal.imports.markImportRunning, {
-      importId: args.importId,
-      jobId: importContext.jobId,
-    });
+    let importContext: ImportContext | null = null;
 
     try {
+      importContext = (await ctx.runQuery(internal.imports.getImportContext, {
+        importId: args.importId,
+      })) as ImportContext | null;
+
+      if (!importContext) {
+        return;
+      }
+
+      if (importContext.kind === 'cancelled') {
+        await ctx.runMutation(internal.imports.cancelImport, {
+          importId: args.importId,
+          jobId: importContext.jobId,
+          reason: importContext.reason,
+        });
+        return;
+      }
+
+      const runningState = (await ctx.runMutation(internal.imports.markImportRunning, {
+        importId: args.importId,
+        jobId: importContext.jobId,
+      })) as { kind: 'running' } | { kind: 'cancelled'; reason: string };
+
+      if (runningState.kind === 'cancelled') {
+        await ctx.runMutation(internal.imports.cancelImport, {
+          importId: args.importId,
+          jobId: importContext.jobId,
+          reason: runningState.reason,
+        });
+        return;
+      }
+
       if (!isDaytonaConfigured()) {
         throw new Error('DAYTONA_API_KEY is missing. Add Daytona credentials before importing repositories.');
       }
@@ -103,6 +136,7 @@ export const runImportPipeline = internalAction({
 
       const sandbox = await provisionSandbox({
         repositoryKey: importContext.sourceRepoFullName,
+        repositoryId: importContext.repositoryId,
         accessMode: importContext.accessMode,
         sourceAdapter: 'git_clone',
       });
@@ -164,7 +198,7 @@ export const runImportPipeline = internalAction({
         files: fileRecords,
       });
 
-      await ctx.runMutation(internal.imports.persistImportResults, {
+      const persistResult = (await ctx.runMutation(internal.imports.persistImportResults, {
         importId: args.importId,
         repositoryId: importContext.repositoryId,
         jobId: importContext.jobId,
@@ -208,7 +242,11 @@ export const runImportPipeline = internalAction({
             source: 'heuristic' as const,
           },
         ],
-      });
+      })) as { kind: 'completed' } | { kind: 'cancelled' };
+
+      if (persistResult.kind === 'cancelled') {
+        return;
+      }
 
       // Immediately stop the sandbox to release CPU and memory.
       // All indexed data is now persisted in Convex. The sandbox stays on disk
@@ -243,6 +281,10 @@ export const runImportPipeline = internalAction({
       if (isAuthFailure) {
         errorMessage +=
           '\n\nThis repository may not be accessible. Make sure it is included in your GitHub App installation. You can update your repo selection in GitHub Settings > Applications.';
+      }
+
+      if (!importContext || importContext.kind === 'cancelled') {
+        return;
       }
 
       await ctx.runMutation(internal.imports.markImportFailed, {

@@ -11,6 +11,10 @@ import { CASCADE_BATCH_SIZE } from './lib/constants';
 const FILE_COUNT_DISPLAY_LIMIT = 400;
 const REPOSITORY_DELETE_RETRY_MS = 5_000;
 
+function isRepositoryDeleting(repository: { deletionRequestedAt?: number } | null | undefined) {
+  return typeof repository?.deletionRequestedAt === 'number';
+}
+
 export const listRepositories = query({
   args: {},
   handler: async (ctx) => {
@@ -20,7 +24,9 @@ export const listRepositories = query({
       .withIndex('by_ownerTokenIdentifier', (q) => q.eq('ownerTokenIdentifier', identity.tokenIdentifier))
       .take(100);
 
-    return repositories.sort((left, right) => (right.lastImportedAt ?? 0) - (left.lastImportedAt ?? 0));
+    return repositories
+      .filter((repository) => !isRepositoryDeleting(repository))
+      .sort((left, right) => (right.lastImportedAt ?? 0) - (left.lastImportedAt ?? 0));
   },
 });
 
@@ -50,6 +56,10 @@ export const getImportedRepoSummaries = query({
     > = {};
 
     for (const repo of repos) {
+      if (isRepositoryDeleting(repo)) {
+        continue;
+      }
+
       summaries[repo.sourceRepoFullName] = {
         importStatus: repo.importStatus,
         lastImportedAt: repo.lastImportedAt,
@@ -71,7 +81,11 @@ export const getRepositoryDetail = query({
   handler: async (ctx, args) => {
     const identity = await requireViewerIdentity(ctx);
     const repository = await ctx.db.get(args.repositoryId);
-    if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+    if (
+      !repository ||
+      isRepositoryDeleting(repository) ||
+      repository.ownerTokenIdentifier !== identity.tokenIdentifier
+    ) {
       throw new Error('Repository not found.');
     }
 
@@ -177,6 +191,10 @@ export const createRepositoryImport = mutation({
     let repositoryId = repository?._id;
     let defaultThreadId = repository?.defaultThreadId;
 
+    if (repository && isRepositoryDeleting(repository)) {
+      throw new Error('Repository deletion is already in progress.');
+    }
+
     if (repository && (repository.importStatus === 'queued' || repository.importStatus === 'running')) {
       throw new Error('An import is already in progress for this repository.');
     }
@@ -265,7 +283,11 @@ export const syncRepository = mutation({
   handler: async (ctx, args) => {
     const identity = await requireViewerIdentity(ctx);
     const repository = await ctx.db.get(args.repositoryId);
-    if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+    if (
+      !repository ||
+      isRepositoryDeleting(repository) ||
+      repository.ownerTokenIdentifier !== identity.tokenIdentifier
+    ) {
       throw new Error('Repository not found.');
     }
 
@@ -333,14 +355,20 @@ export const deleteRepository = mutation({
       throw new Error('Repository not found.');
     }
 
+    if (isRepositoryDeleting(repository)) {
+      return;
+    }
+
+    await ctx.db.patch(args.repositoryId, {
+      deletionRequestedAt: Date.now(),
+    });
+
     await ctx.runMutation(internal.ops.scheduleRepositorySandboxCleanup, {
       repositoryId: args.repositoryId,
     });
 
-    // Delete the repository immediately so it disappears from the UI
-    await ctx.db.delete(args.repositoryId);
-
-    // Schedule cascading deletion of all related data
+    // Schedule cascading deletion of all related data once background jobs have
+    // had a chance to observe the tombstone and stop cleanly.
     await ctx.scheduler.runAfter(0, internal.repositories.cascadeDeleteRepository, {
       repositoryId: args.repositoryId,
     });
@@ -433,6 +461,12 @@ export const cascadeDeleteRepository = internalMutation({
       await ctx.scheduler.runAfter(waitingOnSandboxCleanup ? REPOSITORY_DELETE_RETRY_MS : 0, internal.repositories.cascadeDeleteRepository, {
         repositoryId: args.repositoryId,
       });
+      return;
+    }
+
+    const repository = await ctx.db.get(args.repositoryId);
+    if (repository) {
+      await ctx.db.delete(args.repositoryId);
     }
   },
 });

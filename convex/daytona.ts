@@ -2,6 +2,7 @@
 
 import { CodeLanguage, Daytona, type Sandbox } from '@daytona/sdk';
 import { shouldReadFile, type RepositorySnapshot } from './lib/repoAnalysis';
+import { buildSandboxName } from './lib/sandboxNames';
 import {
   DEFAULT_AUTO_STOP_MINUTES,
   DEFAULT_AUTO_ARCHIVE_MINUTES,
@@ -16,6 +17,7 @@ const DEFAULT_DISK_GIB = 10;
 
 type CreateSandboxOptions = {
   repositoryKey: string;
+  repositoryId: string;
   accessMode: 'public' | 'private';
   sourceAdapter: 'git_clone' | 'source_service';
 };
@@ -36,11 +38,13 @@ export type SandboxProvisionResult = {
 
 export async function provisionSandbox(options: CreateSandboxOptions): Promise<SandboxProvisionResult> {
   const daytona = createDaytonaClient();
-  const sandboxName = `architect-${safeLabel(options.repositoryKey)}`;
+  const sandboxName = buildSandboxName({
+    repositoryKey: options.repositoryKey,
+    repositoryId: options.repositoryId,
+  });
 
-  // Clean up any pre-existing Daytona sandbox with the same name to avoid
-  // "already exists" conflicts. This handles both DB-tracked sandboxes and
-  // orphans left behind by previously failed imports.
+  // Sandbox names are repository-scoped by repository id, so a same-name lookup
+  // can only refer to a prior sandbox for the same repository.
   try {
     const existing = await daytona.get(sandboxName);
     await daytona.delete(existing);
@@ -60,6 +64,7 @@ export async function provisionSandbox(options: CreateSandboxOptions): Promise<S
       app: 'architect-agent',
       access: options.accessMode,
       adapter: options.sourceAdapter,
+      repositoryId: options.repositoryId,
     },
     autoStopInterval: readNumberEnv('DAYTONA_AUTO_STOP_MINUTES', DEFAULT_AUTO_STOP_MINUTES),
     autoArchiveInterval: readNumberEnv('DAYTONA_AUTO_ARCHIVE_MINUTES', DEFAULT_AUTO_ARCHIVE_MINUTES),
@@ -299,10 +304,6 @@ function ignorePath(path: string) {
     path.startsWith('.next/') ||
     path.startsWith('.turbo/')
   );
-}
-
-function safeLabel(value: string) {
-  return value.replace(/[^a-zA-Z0-9-_]/g, '-').slice(0, 48);
 }
 
 function readNumberEnv(name: string, fallback: number) {

@@ -33,8 +33,9 @@ export const checkForUpdates = action({
       throw new Error('Not authorized to check this repository.');
     }
 
-    // Must have been synced at least once, must not be mid-sync
+    // Must have been synced at least once, must not be mid-sync or deleting
     if (!repo.lastSyncedCommitSha || !repo.defaultBranch) return;
+    if (repo.deletionRequestedAt) return;
     if (repo.importStatus === 'queued' || repo.importStatus === 'running') return;
 
     // Throttle: skip if we checked within the last 60 seconds
@@ -84,6 +85,7 @@ type RepoForCheck = {
   lastSyncedCommitSha: string | null;
   lastCheckedForUpdatesAt: number | null;
   importStatus: string;
+  deletionRequestedAt: number | null;
   ownerTokenIdentifier: string;
   accessMode: 'public' | 'private';
 };
@@ -100,6 +102,7 @@ export const getRepoForCheck = internalQuery({
       lastSyncedCommitSha: repo.lastSyncedCommitSha ?? null,
       lastCheckedForUpdatesAt: repo.lastCheckedForUpdatesAt ?? null,
       importStatus: repo.importStatus,
+      deletionRequestedAt: repo.deletionRequestedAt ?? null,
       ownerTokenIdentifier: repo.ownerTokenIdentifier,
       accessMode: repo.accessMode,
     };
