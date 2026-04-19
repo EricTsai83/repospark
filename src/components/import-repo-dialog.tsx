@@ -13,7 +13,6 @@ import {
 import { api } from '../../convex/_generated/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
@@ -36,7 +35,24 @@ type RepoInfo = {
   description: string | null;
   htmlUrl: string;
   updatedAt: string;
+  ownerAvatarUrl?: string;
 };
+
+function formatRelativeDate(dateStr: string): string {
+  const now = new Date();
+  const date = new Date(dateStr);
+  const diffMs = now.getTime() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / 60_000);
+  const diffHours = Math.floor(diffMs / 3_600_000);
+  const diffDays = Math.floor(diffMs / 86_400_000);
+
+  if (diffMinutes < 1) return 'just now';
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 function isGitHubUrl(input: string): boolean {
   const trimmed = input.trim();
@@ -49,7 +65,6 @@ function isGitHubUrl(input: string): boolean {
 
 function RepoRow({
   repo,
-  isAuthorized,
   isImporting,
   onImport,
 }: {
@@ -58,31 +73,35 @@ function RepoRow({
   isImporting: boolean;
   onImport: () => void;
 }) {
+  const ownerInitial = (repo.fullName.split('/')[0] ?? '?')[0].toUpperCase();
+
   return (
-    <div className="group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-muted">
-      {repo.isPrivate ? (
-        <LockIcon size={14} className="shrink-0 text-muted-foreground" weight="bold" />
+    <div className="flex items-center gap-3 border-b border-border/50 px-1 py-3 last:border-b-0">
+      {/* Avatar */}
+      {repo.ownerAvatarUrl ? (
+        <img
+          src={repo.ownerAvatarUrl}
+          alt=""
+          className="h-8 w-8 shrink-0 rounded-full"
+        />
       ) : (
-        <GlobeIcon size={14} className="shrink-0 text-muted-foreground" weight="bold" />
-      )}
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5">
-          <span className="truncate font-medium">{repo.fullName}</span>
-          <Badge variant="muted" className="shrink-0 text-[10px]">
-            {repo.isPrivate ? 'private' : 'public'}
-          </Badge>
-          {isAuthorized && (
-            <Badge variant="accent" className="shrink-0 text-[10px]">
-              authorized
-            </Badge>
-          )}
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+          {ownerInitial}
         </div>
-        {repo.description && (
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {repo.description}
-          </p>
+      )}
+
+      {/* Repo name + metadata */}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span className="truncate text-sm font-medium">{repo.fullName}</span>
+        {repo.isPrivate && (
+          <LockIcon size={12} className="shrink-0 text-muted-foreground" weight="bold" />
         )}
+        <span className="shrink-0 text-xs text-muted-foreground">
+          · {formatRelativeDate(repo.updatedAt)}
+        </span>
       </div>
+
+      {/* Import button */}
       <Button
         variant="outline"
         size="sm"
@@ -392,10 +411,10 @@ export function ImportRepoDialog({
                       </p>
                     </div>
                   ) : searchResults ? (
-                    <ScrollArea className="h-[240px]">
-                      <div className="flex flex-col gap-0.5 pr-3">
+                    <ScrollArea className="h-[280px]">
+                      <div className="flex flex-col pr-3">
                         {isSearching && (
-                          <div className="flex items-center justify-center gap-1.5 py-1.5">
+                          <div className="flex items-center justify-center gap-1.5 border-b border-border/50 py-2.5">
                             <CircleNotchIcon size={12} className="animate-spin text-muted-foreground" />
                             <span className="text-[11px] text-muted-foreground">Updating results...</span>
                           </div>
@@ -428,16 +447,6 @@ export function ImportRepoDialog({
                   </p>
                 </div>
               )}
-
-              <div className="mt-3 rounded-md border border-border/50 bg-muted/50 px-3 py-2">
-                <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
-                  <InfoIcon size={14} className="mt-0.5 shrink-0" weight="fill" />
-                  <span>
-                    Search covers all public repositories on GitHub.
-                    For private repos, use the <strong className="text-foreground">Private Repo</strong> tab.
-                  </span>
-                </p>
-              </div>
             </TabsContent>
 
             {/* ---- Tab 2: Private Repo ---- */}
@@ -494,8 +503,8 @@ export function ImportRepoDialog({
                   )}
                 </div>
               ) : authorizedPrivateRepos ? (
-                <ScrollArea className="h-[240px]">
-                  <div className="flex flex-col gap-0.5 pr-3">
+                <ScrollArea className="h-[280px]">
+                  <div className="flex flex-col pr-3">
                     {authorizedPrivateRepos.map((repo) => (
                       <RepoRow
                         key={repo.fullName}

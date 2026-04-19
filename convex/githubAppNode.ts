@@ -316,6 +316,7 @@ export const listInstallationRepos = action({
         description: string | null;
         html_url: string;
         updated_at: string;
+        owner: { avatar_url: string; login: string };
       }>;
     };
 
@@ -327,6 +328,7 @@ export const listInstallationRepos = action({
         description: r.description,
         htmlUrl: r.html_url,
         updatedAt: r.updated_at,
+        ownerAvatarUrl: r.owner.avatar_url,
       })),
       totalCount: data.total_count,
     };
@@ -386,6 +388,7 @@ export const searchGitHubRepos = action({
         description: string | null;
         html_url: string;
         updated_at: string;
+        owner: { avatar_url: string; login: string };
       }>;
     };
 
@@ -397,6 +400,7 @@ export const searchGitHubRepos = action({
         description: r.description,
         htmlUrl: r.html_url,
         updatedAt: r.updated_at,
+        ownerAvatarUrl: r.owner.avatar_url,
       })),
       totalCount: data.total_count,
     };
