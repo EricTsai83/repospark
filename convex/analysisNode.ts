@@ -5,12 +5,15 @@ import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { internalAction } from './_generated/server';
 import { runFocusedInspection } from './daytona';
+import { getDeepModeUnavailableReason } from './lib/sandboxAvailability';
 import { createDeepAnalysisMarkdown } from './lib/repoAnalysis';
 
 type DeepAnalysisContext = {
   repositoryId: Id<'repositories'>;
   ownerTokenIdentifier: string;
   latestSandboxId?: Id<'sandboxes'>;
+  sandboxStatus?: 'provisioning' | 'ready' | 'stopped' | 'archived' | 'failed';
+  ttlExpiresAt?: number;
   remoteSandboxId?: string;
   repoPath?: string;
   sourceRepoFullName: string;
@@ -34,11 +37,21 @@ export const runDeepAnalysis = internalAction({
         repositoryId: args.repositoryId,
       })) as DeepAnalysisContext;
 
-      if (!context.remoteSandboxId || !context.repoPath) {
-        throw new Error('No Daytona sandbox is available for this repository yet. Import the repo first.');
+      const unavailableReason = getDeepModeUnavailableReason(
+        context.sandboxStatus && context.ttlExpiresAt !== undefined
+          ? {
+              status: context.sandboxStatus,
+              ttlExpiresAt: context.ttlExpiresAt,
+              remoteId: context.remoteSandboxId,
+              repoPath: context.repoPath,
+            }
+          : null,
+      );
+      if (unavailableReason) {
+        throw new Error(unavailableReason);
       }
 
-      const inspectionLog = await runFocusedInspection(context.remoteSandboxId, context.repoPath, args.prompt);
+      const inspectionLog = await runFocusedInspection(context.remoteSandboxId!, context.repoPath!, args.prompt);
       const markdown = createDeepAnalysisMarkdown(args.prompt, inspectionLog);
 
       await ctx.runMutation(internal.analysis.completeDeepAnalysis, {

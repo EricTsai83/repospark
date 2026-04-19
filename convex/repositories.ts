@@ -4,8 +4,11 @@ import type { DataModel, TableNames } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { mutation, query, internalQuery, internalMutation } from './_generated/server';
 import { requireViewerIdentity } from './lib/auth';
+import { isDeepModeAvailable } from './lib/sandboxAvailability';
 import { makeRepositoryTitle, parseGitHubUrl } from './lib/github';
 import { CASCADE_BATCH_SIZE } from './lib/constants';
+
+const FILE_COUNT_DISPLAY_LIMIT = 400;
 
 export const listRepositories = query({
   args: {},
@@ -86,23 +89,20 @@ export const getRepositoryDetail = query({
       .take(10);
 
     const latestImportId = repository.latestImportId;
-    const fileCount = latestImportId
-      ? (
-          await ctx.db
-            .query('repoFiles')
-            .withIndex('by_importId', (q) => q.eq('importId', latestImportId))
-            .take(400)
-        ).length
-      : 0;
+    const sampledFiles = latestImportId
+      ? await ctx.db
+          .query('repoFiles')
+          .withIndex('by_importId', (q) => q.eq('importId', latestImportId))
+          .take(FILE_COUNT_DISPLAY_LIMIT + 1)
+      : [];
+    const fileCount = Math.min(sampledFiles.length, FILE_COUNT_DISPLAY_LIMIT);
+    const fileCountLabel =
+      sampledFiles.length > FILE_COUNT_DISPLAY_LIMIT ? `${FILE_COUNT_DISPLAY_LIMIT}+` : String(fileCount);
 
     const sandbox = repository.latestSandboxId ? await ctx.db.get(repository.latestSandboxId) : null;
 
     // Determine whether Deep mode is available right now
-    const deepModeAvailable =
-      sandbox !== null &&
-      sandbox.status !== 'archived' &&
-      sandbox.status !== 'failed' &&
-      Date.now() <= sandbox.ttlExpiresAt;
+    const deepModeAvailable = isDeepModeAvailable(sandbox);
 
     // Determine whether the remote has commits we haven't synced yet
     const hasRemoteUpdates =
@@ -116,6 +116,7 @@ export const getRepositoryDetail = query({
       jobs: jobs.sort((left, right) => (right._creationTime ?? 0) - (left._creationTime ?? 0)),
       threads,
       fileCount,
+      fileCountLabel,
       deepModeAvailable,
       hasRemoteUpdates,
       sandbox: sandbox

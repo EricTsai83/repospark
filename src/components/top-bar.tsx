@@ -31,6 +31,7 @@ export type TopBarRepoDetail = {
   deepModeAvailable: boolean;
   hasRemoteUpdates: boolean;
   fileCount: number;
+  fileCountLabel: string;
 };
 
 export function TopBar({

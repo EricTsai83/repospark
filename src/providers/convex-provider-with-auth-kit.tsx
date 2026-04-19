@@ -1,5 +1,6 @@
 import { ReactNode, useCallback, useMemo } from 'react';
 import { ConvexProviderWithAuth, ConvexReactClient } from 'convex/react';
+import { AUTH_TOKEN_ERROR_EVENT } from '@/lib/auth-events';
 
 // Modified to match WorkOS's auth hook structure
 type UseAuth = () => {
@@ -46,6 +47,13 @@ function useUseAuthFromAuthKit(useAuth: UseAuth) {
             return token;
           } catch (error) {
             console.error('Error fetching WorkOS access token:', error);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(
+                new CustomEvent(AUTH_TOKEN_ERROR_EVENT, {
+                  detail: 'Authentication failed. Please refresh the page and sign in again.',
+                }),
+              );
+            }
             return null;
           }
         }, [getAccessToken]);

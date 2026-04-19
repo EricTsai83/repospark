@@ -135,10 +135,18 @@ http.route({
 
     // Parse the event
     const event = request.headers.get('X-GitHub-Event');
-    const payload = JSON.parse(body) as {
+    let payload: {
       action: string;
       installation?: { id: number };
     };
+    try {
+      payload = JSON.parse(body) as {
+        action: string;
+        installation?: { id: number };
+      };
+    } catch {
+      return new Response('Invalid JSON payload', { status: 400 });
+    }
 
     if (event === 'installation' && payload.installation) {
       const installationId = payload.installation.id;

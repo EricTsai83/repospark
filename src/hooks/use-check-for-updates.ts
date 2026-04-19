@@ -16,7 +16,10 @@ import type { Id } from '../../convex/_generated/dataModel';
 export function useCheckForUpdates(repositoryId: Id<'repositories'> | null) {
   const checkForUpdates = useAction(api.githubCheck.checkForUpdates);
   const repoIdRef = useRef(repositoryId);
-  repoIdRef.current = repositoryId;
+
+  useEffect(() => {
+    repoIdRef.current = repositoryId;
+  }, [repositoryId]);
 
   // Fire on repo switch
   useEffect(() => {

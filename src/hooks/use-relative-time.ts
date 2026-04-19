@@ -10,21 +10,15 @@ import { formatRelativeTime } from '@/lib/format';
  *  - otherwise → every 60 s
  */
 export function useRelativeTime(timestamp: number | undefined): string | null {
-  const [label, setLabel] = useState<string | null>(() =>
-    timestamp != null ? formatRelativeTime(timestamp) : null,
-  );
+  const [_tick, setTick] = useState(0);
 
   useEffect(() => {
     if (timestamp == null) {
-      setLabel(null);
       return;
     }
 
-    // Immediately compute once
-    setLabel(formatRelativeTime(timestamp));
-
     function tick() {
-      setLabel(formatRelativeTime(timestamp!));
+      setTick((value) => value + 1);
     }
 
     function scheduleInterval(): ReturnType<typeof setInterval> {
@@ -50,5 +44,5 @@ export function useRelativeTime(timestamp: number | undefined): string | null {
     };
   }, [timestamp]);
 
-  return label;
+  return timestamp != null ? formatRelativeTime(timestamp) : null;
 }

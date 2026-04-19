@@ -81,7 +81,7 @@ export function RepoInfoPopover({
         <div className="flex flex-col gap-2 text-xs text-muted-foreground">
           <InfoRow label="Status" value={deriveStatusLabel(repoDetail)} />
           <InfoRow label="Branch" value={repoDetail.repository.defaultBranch ?? 'Unknown'} />
-          <InfoRow label="Files indexed" value={String(repoDetail.fileCount)} />
+          <InfoRow label="Files indexed" value={repoDetail.fileCountLabel} />
           <InfoRow
             label="Languages"
             value={repoDetail.repository.detectedLanguages.join(', ') || 'Unknown'}

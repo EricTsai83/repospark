@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Badge } from '@/components/ui/badge';
@@ -35,25 +35,30 @@ export function RepositoryShell() {
   const [chatMode, setChatMode] = useState<ChatMode>('fast');
   const [activeTab, setActiveTab] = useState<'chat' | 'jobs' | 'artifacts'>('chat');
   const [showAnalysisDialog, setShowAnalysisDialog] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!repositories || repositories.length === 0) return;
-    if (!selectedRepositoryId || !repositories.some((r) => r._id === selectedRepositoryId)) {
-      setSelectedRepositoryId(repositories[0]._id);
+  const effectiveSelectedRepositoryId = useMemo(() => {
+    if (!repositories || repositories.length === 0) {
+      return null;
     }
+    if (selectedRepositoryId && repositories.some((repository) => repository._id === selectedRepositoryId)) {
+      return selectedRepositoryId;
+    }
+    return repositories[0]._id;
   }, [repositories, selectedRepositoryId]);
 
   const repoDetail = useQuery(
     api.repositories.getRepositoryDetail,
-    selectedRepositoryId ? { repositoryId: selectedRepositoryId } : 'skip',
+    effectiveSelectedRepositoryId ? { repositoryId: effectiveSelectedRepositoryId } : 'skip',
   );
 
   // Derive repo name from the already-loaded list so the TopBar title is
   // available immediately when switching repos (no flash of "Repository").
-  const selectedRepoName = repositories?.find((r) => r._id === selectedRepositoryId)?.sourceRepoFullName;
+  const selectedRepoName = repositories?.find((r) => r._id === effectiveSelectedRepositoryId)?.sourceRepoFullName;
 
   // Check GitHub for new remote commits on tab-focus and repo-switch
-  useCheckForUpdates(selectedRepositoryId);
+  useCheckForUpdates(effectiveSelectedRepositoryId);
 
   const messages = useQuery(api.chat.listMessages, selectedThreadId ? { threadId: selectedThreadId } : 'skip');
   const artifacts = useMemo(() => repoDetail?.artifacts ?? [], [repoDetail?.artifacts]);
@@ -64,8 +69,13 @@ export function RepositoryShell() {
       async (event: React.FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         if (!selectedThreadId || !chatInput.trim()) return;
-        await sendMessageMutation({ threadId: selectedThreadId, content: chatInput, mode: chatMode });
-        setChatInput('');
+        setActionError(null);
+        try {
+          await sendMessageMutation({ threadId: selectedThreadId, content: chatInput, mode: chatMode });
+          setChatInput('');
+        } catch (error) {
+          setActionError(toUserErrorMessage(error, 'Failed to send the message.'));
+        }
       },
       [selectedThreadId, chatInput, chatMode, sendMessageMutation],
     ),
@@ -73,53 +83,85 @@ export function RepositoryShell() {
 
   const [isRunningAnalysis, handleRunAnalysis] = useAsyncCallback(
     useCallback(async () => {
-      if (!selectedRepositoryId) return;
-      await requestDeepAnalysis({ repositoryId: selectedRepositoryId, prompt: analysisPrompt });
-    }, [selectedRepositoryId, analysisPrompt, requestDeepAnalysis]),
+      if (!effectiveSelectedRepositoryId) return;
+      setActionError(null);
+      setAnalysisError(null);
+      try {
+        await requestDeepAnalysis({ repositoryId: effectiveSelectedRepositoryId, prompt: analysisPrompt });
+        setShowAnalysisDialog(false);
+      } catch (error) {
+        const message = toUserErrorMessage(error, 'Failed to start deep analysis.');
+        setActionError(message);
+        setAnalysisError(message);
+      }
+    }, [effectiveSelectedRepositoryId, analysisPrompt, requestDeepAnalysis]),
   );
 
   const [isSyncing, handleSync] = useAsyncCallback(
     useCallback(async () => {
-      if (!selectedRepositoryId) return;
-      await syncRepositoryMutation({ repositoryId: selectedRepositoryId });
-    }, [selectedRepositoryId, syncRepositoryMutation]),
+      if (!effectiveSelectedRepositoryId) return;
+      setActionError(null);
+      try {
+        await syncRepositoryMutation({ repositoryId: effectiveSelectedRepositoryId });
+      } catch (error) {
+        setActionError(toUserErrorMessage(error, 'Failed to sync the repository.'));
+      }
+    }, [effectiveSelectedRepositoryId, syncRepositoryMutation]),
   );
 
   const [isDeletingThread, handleDeleteThread] = useAsyncCallback(
     useCallback(async () => {
       if (!threadToDelete) return;
-      await deleteThreadMutation({ threadId: threadToDelete });
-      if (selectedThreadId === threadToDelete) setSelectedThreadId(null);
-      setThreadToDelete(null);
+      setActionError(null);
+      try {
+        await deleteThreadMutation({ threadId: threadToDelete });
+        if (selectedThreadId === threadToDelete) setSelectedThreadId(null);
+        setThreadToDelete(null);
+      } catch (error) {
+        setActionError(toUserErrorMessage(error, 'Failed to delete the thread.'));
+      }
     }, [threadToDelete, selectedThreadId, deleteThreadMutation]),
   );
 
   const [isDeletingRepo, handleDeleteRepo] = useAsyncCallback(
     useCallback(async () => {
-      if (!selectedRepositoryId) return;
-      await deleteRepositoryMutation({ repositoryId: selectedRepositoryId });
-      setSelectedRepositoryId(null);
-      setSelectedThreadId(null);
-      setShowDeleteRepoDialog(false);
-    }, [selectedRepositoryId, deleteRepositoryMutation]),
+      if (!effectiveSelectedRepositoryId) return;
+      setActionError(null);
+      try {
+        await deleteRepositoryMutation({ repositoryId: effectiveSelectedRepositoryId });
+        setSelectedRepositoryId(null);
+        setSelectedThreadId(null);
+        setShowDeleteRepoDialog(false);
+      } catch (error) {
+        setActionError(toUserErrorMessage(error, 'Failed to delete the repository.'));
+      }
+    }, [effectiveSelectedRepositoryId, deleteRepositoryMutation]),
   );
 
   return (
     <>
       <AppSidebar
         repositories={repositories}
-        selectedRepositoryId={selectedRepositoryId}
+        selectedRepositoryId={effectiveSelectedRepositoryId}
         onSelectRepository={(id) => {
+          setActionError(null);
+          setAnalysisError(null);
           setSelectedRepositoryId(id);
           setSelectedThreadId(null);
           setThreadToDelete(null);
         }}
         selectedThreadId={selectedThreadId}
-        onSelectThread={setSelectedThreadId}
+        onSelectThread={(threadId) => {
+          setActionError(null);
+          setAnalysisError(null);
+          setSelectedThreadId(threadId);
+        }}
         onDeleteThread={setThreadToDelete}
         chatMode={chatMode}
         defaultThreadId={repoDetail?.repository.defaultThreadId}
         onImported={(repoId, threadId) => {
+          setActionError(null);
+          setAnalysisError(null);
           setSelectedRepositoryId(repoId);
           if (threadId) setSelectedThreadId(threadId);
         }}
@@ -132,10 +174,19 @@ export function RepositoryShell() {
           isSyncing={isSyncing}
           onSync={() => void handleSync()}
           onDeleteRepo={() => setShowDeleteRepoDialog(true)}
-          onRunAnalysis={() => setShowAnalysisDialog(true)}
+          onRunAnalysis={() => {
+            setAnalysisError(null);
+            setShowAnalysisDialog(true);
+          }}
         />
 
-        {!selectedRepositoryId ? (
+        {effectiveSelectedRepositoryId && actionError ? (
+          <div className="border-b border-destructive/20 bg-destructive/5 px-6 py-3 text-sm text-destructive">
+            {actionError}
+          </div>
+        ) : null}
+
+        {!effectiveSelectedRepositoryId ? (
           <EmptyState />
         ) : (
           <Tabs
@@ -222,14 +273,28 @@ export function RepositoryShell() {
 
       <DeepAnalysisDialog
         open={showAnalysisDialog}
-        onOpenChange={setShowAnalysisDialog}
+        onOpenChange={(open) => {
+          setShowAnalysisDialog(open);
+          if (!open) {
+            setAnalysisError(null);
+          }
+        }}
         analysisPrompt={analysisPrompt}
         onAnalysisPromptChange={setAnalysisPrompt}
+        deepModeAvailable={repoDetail?.deepModeAvailable ?? false}
+        errorMessage={analysisError}
         isRunning={isRunningAnalysis}
-        onRun={() => void handleRunAnalysis()}
+        onRun={handleRunAnalysis}
       />
     </>
   );
+}
+
+function toUserErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message;
+  }
+  return fallback;
 }
 
 function CountBadge({ count }: { count: number }) {

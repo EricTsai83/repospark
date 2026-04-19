@@ -16,6 +16,8 @@ export function DeepAnalysisDialog({
   onOpenChange,
   analysisPrompt,
   onAnalysisPromptChange,
+  deepModeAvailable,
+  errorMessage,
   isRunning,
   onRun,
 }: {
@@ -23,8 +25,10 @@ export function DeepAnalysisDialog({
   onOpenChange: (open: boolean) => void;
   analysisPrompt: string;
   onAnalysisPromptChange: (value: string) => void;
+  deepModeAvailable: boolean;
+  errorMessage?: string | null;
   isRunning: boolean;
-  onRun: () => void;
+  onRun: () => Promise<void>;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -41,6 +45,12 @@ export function DeepAnalysisDialog({
           onChange={(e) => onAnalysisPromptChange(e.target.value)}
           className="min-h-40"
         />
+        {!deepModeAvailable ? (
+          <p className="text-sm text-destructive">
+            Deep analysis is unavailable right now. Sync the repository to provision a fresh sandbox.
+          </p>
+        ) : null}
+        {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
         <DialogFooter>
           <DialogClose asChild>
             <Button type="button" variant="secondary">
@@ -50,10 +60,9 @@ export function DeepAnalysisDialog({
           <Button
             type="button"
             variant="default"
-            disabled={isRunning || !analysisPrompt.trim()}
+            disabled={isRunning || !analysisPrompt.trim() || !deepModeAvailable}
             onClick={() => {
-              onRun();
-              onOpenChange(false);
+              void onRun();
             }}
           >
             <SparkleIcon weight="bold" />
