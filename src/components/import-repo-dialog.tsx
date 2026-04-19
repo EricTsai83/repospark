@@ -279,7 +279,7 @@ export function ImportRepoDialog({
           <PlusIcon weight="bold" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent>
         <DialogHeader>
           <DialogTitle>Add a repository</DialogTitle>
           <DialogDescription>

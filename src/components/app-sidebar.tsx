@@ -21,9 +21,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Logo } from '@/components/logo';
 import { ImportRepoDialog } from '@/components/import-repo-dialog';
-import { GitHubReposDialog } from '@/components/github-repos-dialog';
 import { useAsyncCallback } from '@/hooks/use-async-callback';
-import { useGitHubConnection } from '@/hooks/use-github-connection';
 import type { RepositoryId, ThreadId, ChatMode } from '@/lib/types';
 
 export function AppSidebar({
@@ -130,9 +128,8 @@ export function AppSidebar({
       </SidebarContent>
 
       <SidebarFooter>
-        <GitHubStatusSection />
-        <ModeToggle />
-        <div className="ml-auto flex items-center gap-2">
+        <div className="flex items-center justify-between">
+          <ModeToggle />
           {authButton}
         </div>
       </SidebarFooter>
@@ -286,32 +283,3 @@ const ThreadsList = memo(function ThreadsList({
   );
 });
 
-function GitHubStatusSection() {
-  const { isConnected, accountLogin, installationId, repositorySelection, isLoading } = useGitHubConnection();
-
-  if (isLoading) {
-    return null;
-  }
-
-  if (!isConnected) {
-    return (
-      <p className="text-center text-[11px] text-muted-foreground">
-        GitHub not connected
-      </p>
-    );
-  }
-
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-center text-[11px] text-muted-foreground">
-        GitHub connected as <span className="font-medium text-foreground">{accountLogin}</span>
-        {repositorySelection === 'selected' && (
-          <span className="block text-[10px]">(selected repos only)</span>
-        )}
-      </p>
-      {installationId && (
-        <GitHubReposDialog installationId={installationId} repositorySelection={repositorySelection} />
-      )}
-    </div>
-  );
-}
