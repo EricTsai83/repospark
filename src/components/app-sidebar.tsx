@@ -39,7 +39,7 @@ export function AppSidebar({
   selectedRepositoryId: RepositoryId | null;
   onSelectRepository: (id: RepositoryId) => void;
   selectedThreadId: ThreadId | null;
-  onSelectThread: (id: ThreadId) => void;
+  onSelectThread: (id: ThreadId | null) => void;
   onDeleteThread: (id: ThreadId) => void;
   chatMode: ChatMode;
   defaultThreadId?: ThreadId;
@@ -94,9 +94,9 @@ export function AppSidebar({
                 onClick={() => onSelectRepository(repository._id)}
               >
                 {repository.visibility === 'private' ? (
-                  <LockIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" title="Private (authorized)" />
+                  <LockIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" />
                 ) : (
-                  <GlobeIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" title="Public" />
+                  <GlobeIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" />
                 )}
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">{repository.sourceRepoFullName}</p>
                 {/* Orange dot when remote has new commits */}
@@ -148,7 +148,7 @@ function ThreadsSection({
 }: {
   repositoryId: RepositoryId;
   selectedThreadId: ThreadId | null;
-  onSelectThread: (id: ThreadId) => void;
+  onSelectThread: (id: ThreadId | null) => void;
   onDeleteThread: (id: ThreadId) => void;
   chatMode: ChatMode;
   defaultThreadId?: ThreadId;
@@ -240,7 +240,7 @@ const ThreadsList = memo(function ThreadsList({
 }: {
   threads: Doc<'threads'>[];
   selectedThreadId: ThreadId | null;
-  onSelectThread: (id: ThreadId) => void;
+  onSelectThread: (id: ThreadId | null) => void;
   onDeleteThread: (id: ThreadId) => void;
 }) {
   if (threads.length === 0) {
