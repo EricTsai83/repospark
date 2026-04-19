@@ -103,18 +103,19 @@ export const saveInstallation = internalMutation({
     repositorySelection: v.union(v.literal('all'), v.literal('selected')),
   },
   handler: async (ctx, args) => {
-    // Upsert: update existing record for this user or insert a new one
-    const existing = await ctx.db
+    // Look for an existing active installation for this owner
+    const existingActive = await ctx.db
       .query('githubInstallations')
-      .withIndex('by_ownerTokenIdentifier', (q) =>
-        q.eq('ownerTokenIdentifier', args.ownerTokenIdentifier),
+      .withIndex('by_ownerTokenIdentifier_and_status', (q) =>
+        q.eq('ownerTokenIdentifier', args.ownerTokenIdentifier).eq('status', 'active'),
       )
       .first();
 
     const now = Date.now();
 
-    if (existing) {
-      await ctx.db.patch(existing._id, {
+    if (existingActive) {
+      // Patch the active installation
+      await ctx.db.patch(existingActive._id, {
         installationId: args.installationId,
         accountLogin: args.accountLogin,
         accountType: args.accountType,
@@ -125,6 +126,7 @@ export const saveInstallation = internalMutation({
         deletedAt: undefined,
       });
     } else {
+      // Insert a new active installation
       await ctx.db.insert('githubInstallations', {
         ownerTokenIdentifier: args.ownerTokenIdentifier,
         installationId: args.installationId,
@@ -143,15 +145,16 @@ export const markInstallationSuspended = internalMutation({
     installationId: v.number(),
   },
   handler: async (ctx, args) => {
-    const installation = await ctx.db
+    const installations = await ctx.db
       .query('githubInstallations')
       .withIndex('by_installationId', (q) => q.eq('installationId', args.installationId))
-      .first();
+      .take(100);
 
-    if (installation) {
+    const now = Date.now();
+    for (const installation of installations) {
       await ctx.db.patch(installation._id, {
         status: 'suspended',
-        suspendedAt: Date.now(),
+        suspendedAt: now,
       });
     }
   },
@@ -162,15 +165,16 @@ export const markInstallationDeleted = internalMutation({
     installationId: v.number(),
   },
   handler: async (ctx, args) => {
-    const installation = await ctx.db
+    const installations = await ctx.db
       .query('githubInstallations')
       .withIndex('by_installationId', (q) => q.eq('installationId', args.installationId))
-      .first();
+      .take(100);
 
-    if (installation) {
+    const now = Date.now();
+    for (const installation of installations) {
       await ctx.db.patch(installation._id, {
         status: 'deleted',
-        deletedAt: Date.now(),
+        deletedAt: now,
       });
     }
   },
@@ -181,12 +185,12 @@ export const markInstallationActive = internalMutation({
     installationId: v.number(),
   },
   handler: async (ctx, args) => {
-    const installation = await ctx.db
+    const installations = await ctx.db
       .query('githubInstallations')
       .withIndex('by_installationId', (q) => q.eq('installationId', args.installationId))
-      .first();
+      .take(100);
 
-    if (installation) {
+    for (const installation of installations) {
       await ctx.db.patch(installation._id, {
         status: 'active',
         suspendedAt: undefined,
@@ -228,10 +232,12 @@ export const disconnectGitHub = mutation({
   handler: async (ctx) => {
     const identity = await requireViewerIdentity(ctx);
 
+    // Find the active installation for this owner specifically, rather than
+    // patching whichever row comes first (which could be an already-deleted one).
     const installation = await ctx.db
       .query('githubInstallations')
-      .withIndex('by_ownerTokenIdentifier', (q) =>
-        q.eq('ownerTokenIdentifier', identity.tokenIdentifier),
+      .withIndex('by_ownerTokenIdentifier_and_status', (q) =>
+        q.eq('ownerTokenIdentifier', identity.tokenIdentifier).eq('status', 'active'),
       )
       .first();
 

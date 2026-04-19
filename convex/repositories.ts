@@ -256,6 +256,18 @@ export const syncRepository = mutation({
       throw new Error('Repository not found.');
     }
 
+    // Check if user has an active GitHub installation
+    const installation = await ctx.db
+      .query('githubInstallations')
+      .withIndex('by_ownerTokenIdentifier', (q) =>
+        q.eq('ownerTokenIdentifier', identity.tokenIdentifier),
+      )
+      .first();
+
+    if (!installation || installation.status !== 'active') {
+      throw new Error('Please connect your GitHub account first to sync repositories.');
+    }
+
     // Prevent duplicate syncs while one is already running
     if (repository.importStatus === 'queued' || repository.importStatus === 'running') {
       throw new Error('A sync is already in progress for this repository.');

@@ -125,15 +125,19 @@ export const runImportPipeline = internalAction({
         networkAllowList: sandbox.networkAllowList,
       });
 
-      // Retrieve GitHub access token (already verified accessible above)
+      // Retrieve GitHub access token — required for private repos
       let githubToken: string | undefined;
-      try {
+      if (detectedVisibility === 'private') {
         githubToken = await getInstallationAccessToken(installationId);
-      } catch (error) {
-        console.warn(
-          '[import] GitHub token unavailable, falling back to unauthenticated:',
-          error instanceof Error ? error.message : error,
-        );
+      } else {
+        try {
+          githubToken = await getInstallationAccessToken(installationId);
+        } catch (error) {
+          console.warn(
+            '[import] GitHub token unavailable, falling back to unauthenticated:',
+            error instanceof Error ? error.message : error,
+          );
+        }
       }
 
       const cloneResult = await cloneRepositoryInSandbox({

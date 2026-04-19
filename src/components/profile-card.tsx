@@ -66,11 +66,11 @@ export function ProfileCard() {
       </DropdownMenuTrigger>
 
       <DropdownMenuContent side="top" align="start" className="w-56">
-        <DropdownMenuItem>
+        <DropdownMenuItem disabled title="Coming soon">
           <Stack weight="bold" />
           <span>Resources</span>
         </DropdownMenuItem>
-        <DropdownMenuItem>
+        <DropdownMenuItem disabled title="Coming soon">
           <ChartLineUp weight="bold" />
           <span>Usage</span>
         </DropdownMenuItem>

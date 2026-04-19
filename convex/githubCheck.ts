@@ -28,6 +28,11 @@ export const checkForUpdates = action({
     );
     if (!repo) return;
 
+    // Verify ownership: caller must own this repo
+    if (identity.tokenIdentifier !== repo.ownerTokenIdentifier) {
+      throw new Error('Not authorized to check this repository.');
+    }
+
     // Must have been synced at least once, must not be mid-sync
     if (!repo.lastSyncedCommitSha || !repo.defaultBranch) return;
     if (repo.importStatus === 'queued' || repo.importStatus === 'running') return;

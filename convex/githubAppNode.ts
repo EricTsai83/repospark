@@ -291,37 +291,57 @@ export const listInstallationRepos = action({
 
     const token = await getInstallationAccessToken(installationId);
 
-    const response = await fetch(
-      'https://api.github.com/installation/repositories?per_page=100',
-      {
+    const allRepos: Array<{
+      full_name: string;
+      private: boolean;
+      default_branch: string;
+      description: string | null;
+      html_url: string;
+      updated_at: string;
+      owner: { avatar_url: string; login: string };
+    }> = [];
+    let totalCount = 0;
+    let nextUrl: string | null = 'https://api.github.com/installation/repositories?per_page=100';
+
+    while (nextUrl) {
+      const response: Response = await fetch(nextUrl, {
         headers: {
           Accept: 'application/vnd.github.v3+json',
           Authorization: `token ${token}`,
           'User-Agent': 'architect-agent',
         },
-      },
-    );
+      });
 
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Failed to list installation repos (${response.status}): ${body}`);
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Failed to list installation repos (${response.status}): ${body}`);
+      }
+
+      const data = (await response.json()) as {
+        total_count: number;
+        repositories: typeof allRepos;
+      };
+
+      totalCount = data.total_count;
+      allRepos.push(...data.repositories);
+
+      // Parse the Link header for pagination
+      const linkHeader = response.headers.get('link');
+      nextUrl = null;
+      if (linkHeader) {
+        const links = linkHeader.split(',');
+        for (const link of links) {
+          const match = link.match(/<([^>]+)>;\s*rel="next"/);
+          if (match) {
+            nextUrl = match[1];
+            break;
+          }
+        }
+      }
     }
 
-    const data = (await response.json()) as {
-      total_count: number;
-      repositories: Array<{
-        full_name: string;
-        private: boolean;
-        default_branch: string;
-        description: string | null;
-        html_url: string;
-        updated_at: string;
-        owner: { avatar_url: string; login: string };
-      }>;
-    };
-
     return {
-      repos: data.repositories.map((r) => ({
+      repos: allRepos.map((r) => ({
         fullName: r.full_name,
         isPrivate: r.private,
         defaultBranch: r.default_branch,
@@ -330,7 +350,7 @@ export const listInstallationRepos = action({
         updatedAt: r.updated_at,
         ownerAvatarUrl: r.owner.avatar_url,
       })),
-      totalCount: data.total_count,
+      totalCount,
     };
   },
 });

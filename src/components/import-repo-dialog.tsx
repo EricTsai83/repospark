@@ -250,6 +250,8 @@ export function ImportRepoDialog({
     const trimmed = publicInput.trim();
 
     if (isUrlMode || trimmed.length < 2) {
+      // Increment requestId to invalidate any pending search requests
+      latestSearchRef.current++;
       setSearchResults(null);
       setSearchError(null);
       setIsSearching(false);

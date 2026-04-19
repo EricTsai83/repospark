@@ -26,7 +26,7 @@ export default function App() {
         <Route
           path="/"
           element={
-            !isLoading && isAuthenticated ? <Navigate to="/chat" replace /> : <HomePage />
+            isLoading ? null : isAuthenticated ? <Navigate to="/chat" replace /> : <HomePage />
           }
         />
         <Route

@@ -262,6 +262,7 @@ export default defineSchema({
     deletedAt: v.optional(v.number()),
   })
     .index('by_ownerTokenIdentifier', ['ownerTokenIdentifier'])
+    .index('by_ownerTokenIdentifier_and_status', ['ownerTokenIdentifier', 'status'])
     .index('by_installationId', ['installationId']),
 
   githubOAuthStates: defineTable({

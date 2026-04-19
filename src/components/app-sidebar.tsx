@@ -94,11 +94,12 @@ export function AppSidebar({
                 onClick={() => onSelectRepository(repository._id)}
               >
                 {repository.visibility === 'private' ? (
-                  <LockIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" />
+                  <LockIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" aria-hidden="true" />
                 ) : (
-                  <GlobeIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" />
+                  <GlobeIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" aria-hidden="true" />
                 )}
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">{repository.sourceRepoFullName}</p>
+                <span className="shrink-0 text-xs text-muted-foreground">{repository.visibility === 'private' ? 'Private' : 'Public'}</span>
                 {/* Orange dot when remote has new commits */}
                 {repository.latestRemoteSha &&
                   repository.lastSyncedCommitSha &&
