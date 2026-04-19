@@ -28,6 +28,11 @@ export const checkForUpdates = action({
     );
     if (!repo) return;
 
+    // Verify ownership: caller must own this repo
+    if (identity.tokenIdentifier !== repo.ownerTokenIdentifier) {
+      throw new Error('Not authorized to check this repository.');
+    }
+
     // Must have been synced at least once, must not be mid-sync
     if (!repo.lastSyncedCommitSha || !repo.defaultBranch) return;
     if (repo.importStatus === 'queued' || repo.importStatus === 'running') return;
@@ -37,7 +42,28 @@ export const checkForUpdates = action({
       return;
     }
 
-    const sha = await fetchLatestRemoteSha(repo.owner, repo.repo, repo.defaultBranch);
+    // Always use authenticated GitHub API (5,000 req/hr per user) when
+    // possible, regardless of whether the repo is public or private.
+    let githubToken: string | undefined;
+    const installationId = await ctx.runQuery(internal.github.getInstallationIdForOwner, {
+      ownerTokenIdentifier: repo.ownerTokenIdentifier,
+    });
+
+    if (installationId) {
+      try {
+        githubToken = await ctx.runAction(internal.githubAppNode.getInstallationToken, {
+          installationId,
+        });
+      } catch (error) {
+        // Non-fatal — fall back to unauthenticated (60 req/hr).
+        console.warn(
+          '[github-check] Failed to get GitHub token:',
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
+    const sha = await fetchLatestRemoteSha(repo.owner, repo.repo, repo.defaultBranch, githubToken);
     if (!sha) return;
 
     await ctx.runMutation(internal.githubCheck.updateRemoteSha, {
@@ -59,6 +85,7 @@ type RepoForCheck = {
   lastCheckedForUpdatesAt: number | null;
   importStatus: string;
   ownerTokenIdentifier: string;
+  accessMode: 'public' | 'private';
 };
 
 export const getRepoForCheck = internalQuery({
@@ -74,6 +101,7 @@ export const getRepoForCheck = internalQuery({
       lastCheckedForUpdatesAt: repo.lastCheckedForUpdatesAt ?? null,
       importStatus: repo.importStatus,
       ownerTokenIdentifier: repo.ownerTokenIdentifier,
+      accessMode: repo.accessMode,
     };
   },
 });
@@ -99,22 +127,28 @@ export const updateRemoteSha = internalMutation({
 
 /**
  * Fetches the latest commit SHA for a branch using the Git refs endpoint.
- * Works for public repos without authentication (60 req/hour rate limit).
+ * Uses authentication token if provided (5000 req/hour) for private repos,
+ * falls back to 60 req/hour for public repos without token.
  */
 async function fetchLatestRemoteSha(
   owner: string,
   repo: string,
   branch: string,
+  token?: string,
 ): Promise<string | null> {
   const url = `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${branch}`;
 
   try {
-    const response = await fetch(url, {
-      headers: {
-        Accept: 'application/vnd.github.v3+json',
-        'User-Agent': 'architect-agent',
-      },
-    });
+    const headers: HeadersInit = {
+      Accept: 'application/vnd.github.v3+json',
+      'User-Agent': 'architect-agent',
+    };
+
+    if (token) {
+      headers.Authorization = `token ${token}`;
+    }
+
+    const response = await fetch(url, { headers });
 
     if (!response.ok) {
       console.warn(

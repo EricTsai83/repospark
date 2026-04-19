@@ -20,6 +20,46 @@ export const listRepositories = query({
   },
 });
 
+/**
+ * Returns a summary of all imported repositories for the current user,
+ * keyed by `sourceRepoFullName`. Used by the authorized-repos dialog
+ * to show import status alongside each GitHub-authorised repo.
+ */
+export const getImportedRepoSummaries = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await requireViewerIdentity(ctx);
+    const repos = await ctx.db
+      .query('repositories')
+      .withIndex('by_ownerTokenIdentifier', (q) =>
+        q.eq('ownerTokenIdentifier', identity.tokenIdentifier),
+      )
+      .take(200);
+
+    const summaries: Record<
+      string,
+      {
+        importStatus: string;
+        lastImportedAt: number | undefined;
+        hasRemoteUpdates: boolean;
+      }
+    > = {};
+
+    for (const repo of repos) {
+      summaries[repo.sourceRepoFullName] = {
+        importStatus: repo.importStatus,
+        lastImportedAt: repo.lastImportedAt,
+        hasRemoteUpdates:
+          !!repo.latestRemoteSha &&
+          !!repo.lastSyncedCommitSha &&
+          repo.latestRemoteSha !== repo.lastSyncedCommitSha,
+      };
+    }
+
+    return summaries;
+  },
+});
+
 export const getRepositoryDetail = query({
   args: {
     repositoryId: v.id('repositories'),
@@ -99,6 +139,21 @@ export const createRepositoryImport = mutation({
     const identity = await requireViewerIdentity(ctx);
     const parsed = parseGitHubUrl(args.url);
 
+    // Check if user has GitHub connected via GitHub App installation
+    const installation = await ctx.db
+      .query('githubInstallations')
+      .withIndex('by_ownerTokenIdentifier', (q) =>
+        q.eq('ownerTokenIdentifier', identity.tokenIdentifier),
+      )
+      .first();
+
+    if (!installation || installation.status !== 'active') {
+      throw new Error('Please connect your GitHub account first to import repositories.');
+    }
+
+    // Installation tokens can access both public and private repos
+    const accessMode = 'private' as const;
+
     let repository = await ctx.db
       .query('repositories')
       .withIndex('by_ownerTokenIdentifier_and_sourceUrl', (q) =>
@@ -110,6 +165,8 @@ export const createRepositoryImport = mutation({
     let defaultThreadId = repository?.defaultThreadId;
 
     if (!repository) {
+      // Visibility will be updated after the import pipeline checks GitHub API.
+      // Default to 'unknown' until the actual check completes.
       repositoryId = await ctx.db.insert('repositories', {
         ownerTokenIdentifier: identity.tokenIdentifier,
         sourceHost: 'github',
@@ -118,8 +175,8 @@ export const createRepositoryImport = mutation({
         sourceRepoOwner: parsed.owner,
         sourceRepoName: parsed.repo,
         defaultBranch: args.branch ?? parsed.branch,
-        visibility: 'public',
-        accessMode: 'public',
+        visibility: 'unknown',
+        accessMode,
         importStatus: 'idle',
         detectedLanguages: [],
         packageManagers: [],
@@ -172,6 +229,7 @@ export const createRepositoryImport = mutation({
       latestImportId: importId,
       latestImportJobId: jobId,
       lastImportedAt: now,
+      accessMode,
     });
 
     await ctx.scheduler.runAfter(0, internal.importsNode.runImportPipeline, {
@@ -196,6 +254,18 @@ export const syncRepository = mutation({
     const repository = await ctx.db.get(args.repositoryId);
     if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
       throw new Error('Repository not found.');
+    }
+
+    // Check if user has an active GitHub installation
+    const installation = await ctx.db
+      .query('githubInstallations')
+      .withIndex('by_ownerTokenIdentifier', (q) =>
+        q.eq('ownerTokenIdentifier', identity.tokenIdentifier),
+      )
+      .first();
+
+    if (!installation || installation.status !== 'active') {
+      throw new Error('Please connect your GitHub account first to sync repositories.');
     }
 
     // Prevent duplicate syncs while one is already running
@@ -326,6 +396,18 @@ export const cascadeDeleteRepository = internalMutation({
         repositoryId: args.repositoryId,
       });
     }
+  },
+});
+
+export const updateRepoVisibility = internalMutation({
+  args: {
+    repositoryId: v.id('repositories'),
+    visibility: v.union(v.literal('public'), v.literal('private')),
+  },
+  handler: async (ctx, args) => {
+    const repo = await ctx.db.get(args.repositoryId);
+    if (!repo) return;
+    await ctx.db.patch(args.repositoryId, { visibility: args.visibility });
   },
 });
 

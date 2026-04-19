@@ -22,7 +22,7 @@ export type TopBarRepoDetail = {
   repository: {
     sourceRepoFullName: string;
     importStatus: string;
-    defaultBranch: string | null;
+    defaultBranch?: string | null;
     detectedLanguages: string[];
     lastImportedAt?: number;
     lastSyncedCommitSha?: string;

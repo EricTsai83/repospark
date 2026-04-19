@@ -124,7 +124,7 @@ export function SidebarFooter({
   return (
     <div
       className={cn(
-        'flex items-center gap-2 border-t border-border px-3 py-3',
+        'flex flex-col gap-3 border-t border-border px-4 py-4',
         className,
       )}
     >

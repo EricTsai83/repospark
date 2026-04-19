@@ -11,7 +11,6 @@ import { ChatPanel } from '@/components/chat-panel';
 import { JobRow } from '@/components/job-row';
 import { DeepAnalysisDialog } from '@/components/deep-analysis-dialog';
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import { AuthButton } from '@/components/auth-button';
 import { EmptyState } from '@/components/empty-state';
 import { useCheckForUpdates } from '@/hooks/use-check-for-updates';
 import { useAsyncCallback } from '@/hooks/use-async-callback';
@@ -55,7 +54,6 @@ export function RepositoryShell() {
 
   // Check GitHub for new remote commits on tab-focus and repo-switch
   useCheckForUpdates(selectedRepositoryId);
-
 
   const messages = useQuery(api.chat.listMessages, selectedThreadId ? { threadId: selectedThreadId } : 'skip');
   const artifacts = useMemo(() => repoDetail?.artifacts ?? [], [repoDetail?.artifacts]);
@@ -125,7 +123,6 @@ export function RepositoryShell() {
           setSelectedRepositoryId(repoId);
           if (threadId) setSelectedThreadId(threadId);
         }}
-        authButton={<AuthButton size="sm" />}
       />
 
       <SidebarInset>

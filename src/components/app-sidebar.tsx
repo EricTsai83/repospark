@@ -1,14 +1,16 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import {
   PlusIcon,
   MagnifyingGlassIcon,
   ChatCircleIcon,
   TrashIcon,
+  GlobeIcon,
+  LockIcon,
 } from '@phosphor-icons/react';
 import type { Doc } from '../../convex/_generated/dataModel';
 import { api } from '../../convex/_generated/api';
-import { ModeToggle } from '@/components/mode-toggle';
+import { ProfileCard } from '@/components/profile-card';
 import { Button } from '@/components/ui/button';
 import {
   Sidebar,
@@ -32,18 +34,16 @@ export function AppSidebar({
   chatMode,
   defaultThreadId,
   onImported,
-  authButton,
 }: {
   repositories: Doc<'repositories'>[] | undefined;
   selectedRepositoryId: RepositoryId | null;
   onSelectRepository: (id: RepositoryId) => void;
   selectedThreadId: ThreadId | null;
-  onSelectThread: (id: ThreadId) => void;
+  onSelectThread: (id: ThreadId | null) => void;
   onDeleteThread: (id: ThreadId) => void;
   chatMode: ChatMode;
   defaultThreadId?: ThreadId;
   onImported: (repoId: RepositoryId, threadId: ThreadId | null) => void;
-  authButton: React.ReactNode;
 }) {
   const [repoSearch, setRepoSearch] = useState('');
 
@@ -93,7 +93,13 @@ export function AppSidebar({
                 selected={selectedRepositoryId === repository._id}
                 onClick={() => onSelectRepository(repository._id)}
               >
+                {repository.visibility === 'private' ? (
+                  <LockIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" aria-hidden="true" />
+                ) : (
+                  <GlobeIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" aria-hidden="true" />
+                )}
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">{repository.sourceRepoFullName}</p>
+                <span className="shrink-0 text-xs text-muted-foreground">{repository.visibility === 'private' ? 'Private' : 'Public'}</span>
                 {/* Orange dot when remote has new commits */}
                 {repository.latestRemoteSha &&
                   repository.lastSyncedCommitSha &&
@@ -120,9 +126,8 @@ export function AppSidebar({
         )}
       </SidebarContent>
 
-      <SidebarFooter>
-        <ModeToggle />
-        <div className="ml-auto">{authButton}</div>
+      <SidebarFooter className="px-3 py-2">
+        <ProfileCard />
       </SidebarFooter>
     </Sidebar>
   );
@@ -144,7 +149,7 @@ function ThreadsSection({
 }: {
   repositoryId: RepositoryId;
   selectedThreadId: ThreadId | null;
-  onSelectThread: (id: ThreadId) => void;
+  onSelectThread: (id: ThreadId | null) => void;
   onDeleteThread: (id: ThreadId) => void;
   chatMode: ChatMode;
   defaultThreadId?: ThreadId;
@@ -236,7 +241,7 @@ const ThreadsList = memo(function ThreadsList({
 }: {
   threads: Doc<'threads'>[];
   selectedThreadId: ThreadId | null;
-  onSelectThread: (id: ThreadId) => void;
+  onSelectThread: (id: ThreadId | null) => void;
   onDeleteThread: (id: ThreadId) => void;
 }) {
   if (threads.length === 0) {
@@ -273,3 +278,4 @@ const ThreadsList = memo(function ThreadsList({
     </>
   );
 });
+
