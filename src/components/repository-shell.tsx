@@ -211,7 +211,7 @@ export function RepositoryShell() {
             }}
             analysisPrompt={analysisPrompt}
             onAnalysisPromptChange={setAnalysisPrompt}
-            deepModeAvailable={!isRepoDetailLoading && (repoDetail?.deepModeAvailable ?? false)}
+            deepModeAvailable={repoDetail !== undefined && repoDetail.deepModeAvailable}
             deepModeReason={repoDetail?.deepModeStatus?.message ?? null}
             errorMessage={analysisError}
             isRunning={isRunningAnalysis}
