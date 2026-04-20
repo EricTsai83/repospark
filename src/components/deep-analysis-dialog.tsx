@@ -1,4 +1,5 @@
 import { SparkleIcon } from '@phosphor-icons/react';
+import { AppNotice } from '@/components/app-notice';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -17,6 +18,7 @@ export function DeepAnalysisDialog({
   analysisPrompt,
   onAnalysisPromptChange,
   deepModeAvailable,
+  deepModeReason,
   errorMessage,
   isRunning,
   onRun,
@@ -26,6 +28,7 @@ export function DeepAnalysisDialog({
   analysisPrompt: string;
   onAnalysisPromptChange: (value: string) => void;
   deepModeAvailable: boolean;
+  deepModeReason?: string | null;
   errorMessage?: string | null;
   isRunning: boolean;
   onRun: () => Promise<void>;
@@ -46,9 +49,11 @@ export function DeepAnalysisDialog({
           className="min-h-40"
         />
         {!deepModeAvailable ? (
-          <p className="text-sm text-destructive">
-            Deep analysis is unavailable right now. Sync the repository to provision a fresh sandbox.
-          </p>
+          <AppNotice
+            title="Deep analysis unavailable"
+            message={deepModeReason ?? 'Deep analysis is unavailable right now. Sync the repository to provision a fresh sandbox.'}
+            tone="warning"
+          />
         ) : null}
         {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
         <DialogFooter>

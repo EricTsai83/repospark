@@ -2,7 +2,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { mutation, query, internalMutation, internalQuery } from './_generated/server';
 import { requireViewerIdentity } from './lib/auth';
-import { getDeepModeUnavailableReason } from './lib/sandboxAvailability';
+import { getDeepModeAvailability } from './lib/sandboxAvailability';
 
 export const listArtifacts = query({
   args: {
@@ -36,9 +36,9 @@ export const requestDeepAnalysis = mutation({
     }
 
     const sandbox = repository.latestSandboxId ? await ctx.db.get(repository.latestSandboxId) : null;
-    const unavailableReason = getDeepModeUnavailableReason(sandbox);
-    if (!sandbox || unavailableReason) {
-      throw new Error(unavailableReason ?? 'Deep analysis is unavailable.');
+    const deepModeStatus = getDeepModeAvailability(sandbox);
+    if (!sandbox || !deepModeStatus.available) {
+      throw new Error(deepModeStatus.message ?? 'Deep analysis is unavailable.');
     }
 
     const jobId = await ctx.db.insert('jobs', {

@@ -1,29 +1,21 @@
-import { memo, useCallback, useMemo, useState } from 'react';
-import { useMutation, useQuery } from 'convex/react';
+import { useState } from 'react';
+import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
 import { TopBar } from '@/components/top-bar';
-import { ChatPanel } from '@/components/chat-panel';
-import { JobRow } from '@/components/job-row';
 import { DeepAnalysisDialog } from '@/components/deep-analysis-dialog';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { EmptyState } from '@/components/empty-state';
+import { AppNotice } from '@/components/app-notice';
+import { RepositoryTabs } from '@/components/repository-tabs';
 import { useCheckForUpdates } from '@/hooks/use-check-for-updates';
-import { useAsyncCallback } from '@/hooks/use-async-callback';
+import { useRepositoryActions } from '@/hooks/use-repository-actions';
+import { useRepositorySelection } from '@/hooks/use-repository-selection';
 import type { RepositoryId, ThreadId, ChatMode } from '@/lib/types';
 
 export function RepositoryShell() {
   const repositories = useQuery(api.repositories.listRepositories);
-  const requestDeepAnalysis = useMutation(api.analysis.requestDeepAnalysis);
-  const sendMessageMutation = useMutation(api.chat.sendMessage);
-  const syncRepositoryMutation = useMutation(api.repositories.syncRepository);
-  const deleteThreadMutation = useMutation(api.chat.deleteThread);
-  const deleteRepositoryMutation = useMutation(api.repositories.deleteRepository);
-
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<RepositoryId | null>(null);
   const [selectedThreadId, setSelectedThreadId] = useState<ThreadId | null>(null);
   const [threadToDelete, setThreadToDelete] = useState<ThreadId | null>(null);
@@ -38,105 +30,50 @@ export function RepositoryShell() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
-  const effectiveSelectedRepositoryId = useMemo(() => {
-    if (!repositories || repositories.length === 0) {
-      return null;
-    }
-    if (selectedRepositoryId && repositories.some((repository) => repository._id === selectedRepositoryId)) {
-      return selectedRepositoryId;
-    }
-    return repositories[0]._id;
-  }, [repositories, selectedRepositoryId]);
+  const { effectiveSelectedRepositoryId, selectedRepoName } = useRepositorySelection(
+    repositories,
+    selectedRepositoryId,
+  );
 
   const repoDetail = useQuery(
     api.repositories.getRepositoryDetail,
     effectiveSelectedRepositoryId ? { repositoryId: effectiveSelectedRepositoryId } : 'skip',
   );
 
-  // Derive repo name from the already-loaded list so the TopBar title is
-  // available immediately when switching repos (no flash of "Repository").
-  const selectedRepoName = repositories?.find((r) => r._id === effectiveSelectedRepositoryId)?.sourceRepoFullName;
-
   // Check GitHub for new remote commits on tab-focus and repo-switch
   useCheckForUpdates(effectiveSelectedRepositoryId);
 
   const messages = useQuery(api.chat.listMessages, selectedThreadId ? { threadId: selectedThreadId } : 'skip');
-  const artifacts = useMemo(() => repoDetail?.artifacts ?? [], [repoDetail?.artifacts]);
-  const jobs = useMemo(() => repoDetail?.jobs ?? [], [repoDetail?.jobs]);
+  const artifacts = repoDetail?.artifacts ?? [];
+  const jobs = repoDetail?.jobs ?? [];
 
-  const [isSending, handleSendMessage] = useAsyncCallback(
-    useCallback(
-      async (event: React.FormEvent<HTMLFormElement>) => {
-        event.preventDefault();
-        if (!selectedThreadId || !chatInput.trim()) return;
-        setActionError(null);
-        try {
-          await sendMessageMutation({ threadId: selectedThreadId, content: chatInput, mode: chatMode });
-          setChatInput('');
-        } catch (error) {
-          setActionError(toUserErrorMessage(error, 'Failed to send the message.'));
-        }
-      },
-      [selectedThreadId, chatInput, chatMode, sendMessageMutation],
-    ),
-  );
-
-  const [isRunningAnalysis, handleRunAnalysis] = useAsyncCallback(
-    useCallback(async () => {
-      if (!effectiveSelectedRepositoryId) return;
-      setActionError(null);
-      setAnalysisError(null);
-      try {
-        await requestDeepAnalysis({ repositoryId: effectiveSelectedRepositoryId, prompt: analysisPrompt });
-        setShowAnalysisDialog(false);
-      } catch (error) {
-        const message = toUserErrorMessage(error, 'Failed to start deep analysis.');
-        setActionError(message);
-        setAnalysisError(message);
-      }
-    }, [effectiveSelectedRepositoryId, analysisPrompt, requestDeepAnalysis]),
-  );
-
-  const [isSyncing, handleSync] = useAsyncCallback(
-    useCallback(async () => {
-      if (!effectiveSelectedRepositoryId) return;
-      setActionError(null);
-      try {
-        await syncRepositoryMutation({ repositoryId: effectiveSelectedRepositoryId });
-      } catch (error) {
-        setActionError(toUserErrorMessage(error, 'Failed to sync the repository.'));
-      }
-    }, [effectiveSelectedRepositoryId, syncRepositoryMutation]),
-  );
-
-  const [isDeletingThread, handleDeleteThread] = useAsyncCallback(
-    useCallback(async () => {
-      if (!threadToDelete) return;
-      setActionError(null);
-      try {
-        await deleteThreadMutation({ threadId: threadToDelete });
-        if (selectedThreadId === threadToDelete) setSelectedThreadId(null);
-        setThreadToDelete(null);
-      } catch (error) {
-        setActionError(toUserErrorMessage(error, 'Failed to delete the thread.'));
-      }
-    }, [threadToDelete, selectedThreadId, deleteThreadMutation]),
-  );
-
-  const [isDeletingRepo, handleDeleteRepo] = useAsyncCallback(
-    useCallback(async () => {
-      if (!effectiveSelectedRepositoryId) return;
-      setActionError(null);
-      try {
-        await deleteRepositoryMutation({ repositoryId: effectiveSelectedRepositoryId });
-        setSelectedRepositoryId(null);
-        setSelectedThreadId(null);
-        setShowDeleteRepoDialog(false);
-      } catch (error) {
-        setActionError(toUserErrorMessage(error, 'Failed to delete the repository.'));
-      }
-    }, [effectiveSelectedRepositoryId, deleteRepositoryMutation]),
-  );
+  const {
+    isSending,
+    handleSendMessage,
+    isRunningAnalysis,
+    handleRunAnalysis,
+    isSyncing,
+    handleSync,
+    isDeletingThread,
+    handleDeleteThread,
+    isDeletingRepo,
+    handleDeleteRepo,
+  } = useRepositoryActions({
+    selectedRepositoryId: effectiveSelectedRepositoryId,
+    selectedThreadId,
+    threadToDelete,
+    analysisPrompt,
+    chatInput,
+    chatMode,
+    setChatInput,
+    setActionError,
+    setAnalysisError,
+    setSelectedRepositoryId,
+    setSelectedThreadId,
+    setThreadToDelete,
+    setShowDeleteRepoDialog,
+    setShowAnalysisDialog,
+  });
 
   return (
     <>
@@ -181,71 +118,32 @@ export function RepositoryShell() {
         />
 
         {effectiveSelectedRepositoryId && actionError ? (
-          <div className="border-b border-destructive/20 bg-destructive/5 px-6 py-3 text-sm text-destructive">
-            {actionError}
+          <div className="border-b border-border px-6 py-3">
+            <AppNotice title="Action failed" message={actionError} tone="error" />
           </div>
         ) : null}
 
         {!effectiveSelectedRepositoryId ? (
           <EmptyState />
         ) : (
-          <Tabs
-            value={activeTab}
-            onValueChange={(value) => setActiveTab(value as typeof activeTab)}
-            className="flex min-h-0 flex-1 flex-col"
-          >
-            <MainTabsList jobCount={jobs.length} artifactCount={artifacts.length} />
-
-            <TabsContent value="chat">
-              <ChatPanel
-                selectedThreadId={selectedThreadId}
-                messages={messages}
-                chatInput={chatInput}
-                setChatInput={setChatInput}
-                chatMode={chatMode}
-                setChatMode={setChatMode}
-                isSending={isSending}
-                onSendMessage={handleSendMessage}
-                deepModeAvailable={repoDetail?.deepModeAvailable ?? false}
-                isSyncing={isSyncing}
-                onSync={() => void handleSync()}
-              />
-            </TabsContent>
-
-            <TabsContent value="jobs">
-              <ListPanel emptyText="No jobs yet." isEmpty={jobs.length === 0}>
-                {jobs.map((job) => (
-                  <JobRow key={job._id} job={job} />
-                ))}
-              </ListPanel>
-            </TabsContent>
-
-            <TabsContent value="artifacts">
-              <ListPanel
-                emptyText="Once the import finishes, manifests, READMEs, and architecture summaries appear here."
-                isEmpty={artifacts.length === 0}
-              >
-                {artifacts.map((artifact) => (
-                  <Card key={artifact._id}>
-                    <CardHeader className="flex-row items-start justify-between gap-3 p-4 pb-2">
-                      <div className="min-w-0">
-                        <h4 className="truncate text-sm font-semibold">{artifact.title}</h4>
-                        <p className="mt-1 text-xs text-muted-foreground">{artifact.summary}</p>
-                      </div>
-                      <Badge variant="outline" className="uppercase">
-                        {artifact.kind}
-                      </Badge>
-                    </CardHeader>
-                    <CardContent className="p-4 pt-0">
-                      <pre className="overflow-x-auto whitespace-pre-wrap text-xs text-muted-foreground">
-                        {artifact.contentMarkdown}
-                      </pre>
-                    </CardContent>
-                  </Card>
-                ))}
-              </ListPanel>
-            </TabsContent>
-          </Tabs>
+          <RepositoryTabs
+            activeTab={activeTab}
+            onActiveTabChange={setActiveTab}
+            jobs={jobs}
+            artifacts={artifacts}
+            selectedThreadId={selectedThreadId}
+            messages={messages}
+            chatInput={chatInput}
+            setChatInput={setChatInput}
+            chatMode={chatMode}
+            setChatMode={setChatMode}
+            isSending={isSending}
+            onSendMessage={handleSendMessage}
+            deepModeAvailable={repoDetail?.deepModeAvailable ?? false}
+            deepModeStatus={repoDetail?.deepModeStatus ?? null}
+            isSyncing={isSyncing}
+            onSync={() => void handleSync()}
+          />
         )}
       </SidebarInset>
 
@@ -282,69 +180,11 @@ export function RepositoryShell() {
         analysisPrompt={analysisPrompt}
         onAnalysisPromptChange={setAnalysisPrompt}
         deepModeAvailable={repoDetail?.deepModeAvailable ?? false}
+        deepModeReason={repoDetail?.deepModeStatus?.message ?? null}
         errorMessage={analysisError}
         isRunning={isRunningAnalysis}
         onRun={handleRunAnalysis}
       />
     </>
-  );
-}
-
-function toUserErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message;
-  }
-  return fallback;
-}
-
-function CountBadge({ count }: { count: number }) {
-  return (
-    <span className="ml-1.5 inline-flex min-w-5 items-center justify-center px-1 py-px text-[10px] font-semibold bg-muted text-muted-foreground">
-      {count}
-    </span>
-  );
-}
-
-/**
- * Memoised tab bar – only re-renders when the badge counts actually change,
- * not on every repo switch or repoDetail reload.
- */
-const MainTabsList = memo(function MainTabsList({
-  jobCount,
-  artifactCount,
-}: {
-  jobCount: number;
-  artifactCount: number;
-}) {
-  return (
-    <TabsList className="border-b border-border px-4">
-      <TabsTrigger value="chat">Chat</TabsTrigger>
-      <TabsTrigger value="jobs">
-        Jobs
-        <CountBadge count={jobCount} />
-      </TabsTrigger>
-      <TabsTrigger value="artifacts">
-        Artifacts
-        <CountBadge count={artifactCount} />
-      </TabsTrigger>
-    </TabsList>
-  );
-});
-
-function ListPanel({
-  emptyText,
-  children,
-  isEmpty,
-}: {
-  emptyText: string;
-  children: React.ReactNode;
-  isEmpty: boolean;
-}) {
-  return (
-    <div className="flex-1 overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-6 py-6">
-        {isEmpty ? <p className="text-sm text-muted-foreground">{emptyText}</p> : children}
-      </div>
-    </div>
   );
 }
