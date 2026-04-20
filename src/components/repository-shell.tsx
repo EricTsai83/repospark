@@ -136,7 +136,6 @@ export function RepositoryShell() {
         <TopBar
           repoDetail={repoDetail}
           repoName={selectedRepoName}
-          workspaceStatus={workspaceStatus}
           isSyncing={isSyncing}
           onSync={() => void handleSync()}
           onDeleteRepo={() => setShowDeleteRepoDialog(true)}

@@ -6,7 +6,6 @@ import { api } from '../../convex/_generated/api';
 import { ProfileCard } from '@/components/profile-card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenuButton } from '@/components/ui/sidebar';
 import { Logo } from '@/components/logo';
 import { ImportRepoDialog } from '@/components/import-repo-dialog';
@@ -72,37 +71,37 @@ export function AppSidebar({
 
       <SidebarContent>
         <div className="flex flex-col gap-1 p-3" aria-live="polite">
-          {repositories === undefined ? (
-            <SidebarRepositorySkeleton />
-          ) : filteredRepos.length === 0 ? (
-            <div className="px-3 py-6 text-center text-xs">
+          {repositories === undefined ? null : filteredRepos.length === 0 ? (
+            <div className="px-3 py-6 text-center text-xs animate-in fade-in slide-in-from-top-1 duration-300">
               <p className="font-semibold">No repositories</p>
               <p className="mt-1 text-muted-foreground">Import a public GitHub repo to get started.</p>
             </div>
           ) : (
-            filteredRepos.map((repository) => (
-              <SidebarMenuButton
-                key={repository._id}
-                selected={selectedRepositoryId === repository._id}
-                onClick={() => onSelectRepository(repository._id)}
-              >
-                {repository.visibility === 'private' ? (
-                  <LockIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" aria-hidden="true" />
-                ) : (
-                  <GlobeIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" aria-hidden="true" />
-                )}
-                <p className="min-w-0 flex-1 truncate text-sm font-medium">{repository.sourceRepoFullName}</p>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {repository.visibility === 'private' ? 'Private' : 'Public'}
-                </span>
-                {/* Orange dot when remote has new commits */}
-                {repository.latestRemoteSha &&
-                  repository.lastSyncedCommitSha &&
-                  repository.latestRemoteSha !== repository.lastSyncedCommitSha && (
-                    <span className="h-2 w-2 shrink-0 rounded-full bg-orange-500" title="New commits available" />
+            <div className="flex flex-col gap-1 animate-in fade-in slide-in-from-top-1 duration-300">
+              {filteredRepos.map((repository) => (
+                <SidebarMenuButton
+                  key={repository._id}
+                  selected={selectedRepositoryId === repository._id}
+                  onClick={() => onSelectRepository(repository._id)}
+                >
+                  {repository.visibility === 'private' ? (
+                    <LockIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" aria-hidden="true" />
+                  ) : (
+                    <GlobeIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" aria-hidden="true" />
                   )}
-              </SidebarMenuButton>
-            ))
+                  <p className="min-w-0 flex-1 truncate text-sm font-medium">{repository.sourceRepoFullName}</p>
+                  <span className="shrink-0 text-xs text-muted-foreground">
+                    {repository.visibility === 'private' ? 'Private' : 'Public'}
+                  </span>
+                  {/* Orange dot when remote has new commits */}
+                  {repository.latestRemoteSha &&
+                    repository.lastSyncedCommitSha &&
+                    repository.latestRemoteSha !== repository.lastSyncedCommitSha && (
+                      <span className="h-2 w-2 shrink-0 rounded-full bg-orange-500" title="New commits available" />
+                    )}
+                </SidebarMenuButton>
+              ))}
+            </div>
           )}
         </div>
 
@@ -115,8 +114,6 @@ export function AppSidebar({
             chatMode={chatMode}
             defaultThreadId={defaultThreadId}
           />
-        ) : repositories === undefined ? (
-          <ThreadsSectionSkeleton />
         ) : null}
       </SidebarContent>
 
@@ -180,9 +177,7 @@ function ThreadsSection({
       <div className="border-t border-border" />
       <div className="flex flex-col gap-1 p-3">
         <ThreadsHeader isCreatingThread={isCreatingThread} onCreateThread={() => void handleCreateThread()} />
-        {threads === undefined ? (
-          <SidebarThreadsSkeleton />
-        ) : (
+        {threads === undefined ? null : (
           <ThreadsList
             threads={threads}
             selectedThreadId={selectedThreadId}
@@ -229,54 +224,6 @@ const ThreadsHeader = memo(function ThreadsHeader({
   );
 });
 
-function SidebarRepositorySkeleton() {
-  return (
-    <>
-      {Array.from({ length: 6 }, (_, index) => (
-        <div key={index} className="flex w-full items-center gap-2 border border-transparent px-3 py-2">
-          <Skeleton className="h-[13px] w-[13px] shrink-0 rounded-sm" />
-          <Skeleton className="h-4 min-w-0 flex-1" />
-          <Skeleton className="h-3 w-12 shrink-0" />
-        </div>
-      ))}
-    </>
-  );
-}
-
-function SidebarThreadsSkeleton() {
-  return (
-    <div className="space-y-1">
-      {Array.from({ length: 4 }, (_, index) => (
-        <div key={index} className="relative">
-          <div className="flex w-full items-center gap-2 border border-transparent px-3 py-1.5 pr-10">
-            <Skeleton className="h-[14px] w-[14px] shrink-0 rounded-sm" />
-            <Skeleton className="h-3.5 min-w-0 flex-1 rounded-sm" />
-          </div>
-          <Skeleton className="absolute right-1.5 top-1/2 h-6 w-6 -translate-y-1/2 rounded-md" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// Rendered while we don't yet know which repository the sidebar will show –
-// keeps the "Threads" section visually reserved so the sidebar doesn't grow
-// taller the instant repositories resolve.
-function ThreadsSectionSkeleton() {
-  return (
-    <>
-      <div className="border-t border-border" />
-      <div className="flex flex-col gap-1 p-3">
-        <div className="flex items-center justify-between px-1 pb-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Threads</p>
-          <Skeleton className="h-6 w-6 rounded-md" />
-        </div>
-        <SidebarThreadsSkeleton />
-      </div>
-    </>
-  );
-}
-
 /**
  * Memoised thread list – re-renders when threads data or selection changes,
  * but independently of the header above.
@@ -293,10 +240,14 @@ const ThreadsList = memo(function ThreadsList({
   onDeleteThread: (id: ThreadId) => void;
 }) {
   if (threads.length === 0) {
-    return <p className="px-1 text-xs text-muted-foreground">No threads yet.</p>;
+    return (
+      <p className="px-1 text-xs text-muted-foreground animate-in fade-in slide-in-from-top-1 duration-300">
+        No threads yet.
+      </p>
+    );
   }
   return (
-    <>
+    <div className="flex flex-col animate-in fade-in slide-in-from-top-1 duration-300">
       {threads.map((thread) => (
         <div key={thread._id} className="group relative">
           <SidebarMenuButton
@@ -323,6 +274,6 @@ const ThreadsList = memo(function ThreadsList({
           </Button>
         </div>
       ))}
-    </>
+    </div>
   );
 });

@@ -2,7 +2,6 @@ import { memo, type FormEvent, type ReactNode } from 'react';
 import type { Doc } from '../../convex/_generated/dataModel';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChatPanel } from '@/components/chat-panel';
 import { JobRow } from '@/components/job-row';
@@ -112,7 +111,11 @@ export function RepositoryTabs({
 function CountBadge({ count }: { count?: number }) {
   return (
     <span className="ml-1.5 inline-flex min-w-7 items-center justify-center bg-muted px-1 py-px text-[10px] font-semibold text-muted-foreground">
-      {count === undefined ? <Skeleton className="h-2 w-3 rounded-sm" /> : count}
+      {count === undefined ? (
+        <span className="invisible">0</span>
+      ) : (
+        <span className="animate-in fade-in duration-300">{count}</span>
+      )}
     </span>
   );
 }
@@ -153,28 +156,14 @@ function ListPanel({
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-4xl flex-col gap-3 px-6 py-6">
-        {isLoading ? <ListPanelSkeleton /> : isEmpty ? <p className="text-sm text-muted-foreground">{emptyText}</p> : children}
+        {isLoading ? null : isEmpty ? (
+          <p className="text-sm text-muted-foreground animate-in fade-in duration-300">{emptyText}</p>
+        ) : (
+          <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-1 duration-300">
+            {children}
+          </div>
+        )}
       </div>
     </div>
-  );
-}
-
-function ListPanelSkeleton() {
-  return (
-    <>
-      {Array.from({ length: 3 }, (_, index) => (
-        <Card key={index} className="p-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 flex-1 space-y-2">
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="h-3 w-40" />
-            </div>
-            <Skeleton className="h-5 w-16 rounded-full" />
-          </div>
-          <Skeleton className="mt-3 h-3 w-full" />
-          <Skeleton className="mt-2 h-3 w-2/3" />
-        </Card>
-      ))}
-    </>
   );
 }

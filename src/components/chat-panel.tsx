@@ -3,7 +3,6 @@ import type { Doc } from '../../convex/_generated/dataModel';
 import { AppNotice } from '@/components/app-notice';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
@@ -67,12 +66,14 @@ export function ChatPanel({
               onAction={onSync}
             />
           ) : null}
-          {isChatLoading ? (
-            <ConversationSkeleton />
-          ) : !hasMessages ? (
+          {isChatLoading ? null : !hasMessages ? (
             <EmptyChatHint />
           ) : (
-            messages!.map((message) => <MessageBubble key={message._id} message={message} />)
+            <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
+              {messages!.map((message) => (
+                <MessageBubble key={message._id} message={message} />
+              ))}
+            </div>
           )}
         </div>
       </div>
@@ -155,39 +156,6 @@ function EmptyChatHint() {
         ))}
       </ul>
     </div>
-  );
-}
-
-function ConversationSkeleton() {
-  const bubbles = [
-    { isUser: true, widths: ['w-[86%]', 'w-[64%]'] as const },
-    { isUser: false, widths: ['w-full', 'w-[92%]', 'w-[70%]'] as const },
-    { isUser: true, widths: ['w-[78%]'] as const },
-  ];
-  return (
-    <>
-      {bubbles.map((bubble, index) => (
-        <Card
-          key={index}
-          className={cn(
-            'p-4',
-            bubble.isUser
-              ? 'bg-muted border-transparent'
-              : 'border-transparent bg-transparent px-0',
-          )}
-        >
-          <div className="mb-1 flex items-center justify-between gap-3">
-            <Skeleton className="h-[10px] w-10 rounded-sm" />
-            <Skeleton className="h-[10px] w-12 rounded-sm" />
-          </div>
-          <div className="space-y-1.5 py-0.5">
-            {bubble.widths.map((width, lineIndex) => (
-              <Skeleton key={lineIndex} className={cn('h-4 rounded-sm', width)} />
-            ))}
-          </div>
-        </Card>
-      ))}
-    </>
   );
 }
 
