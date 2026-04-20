@@ -29,7 +29,12 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBound
     };
   }
 
-  componentDidCatch() {}
+  componentDidCatch(error: unknown, errorInfo: { componentStack: string }) {
+    console.error('[ui] render failure', {
+      error: normalizeErrorMessage(error),
+      componentStack: errorInfo.componentStack,
+    });
+  }
 
   render() {
     if (this.state.errorMessage !== null) {

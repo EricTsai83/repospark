@@ -7,6 +7,7 @@ import { internalAction } from './_generated/server';
 import { runFocusedInspection } from './daytona';
 import { getDeepModeUnavailableReason } from './lib/sandboxAvailability';
 import { createDeepAnalysisMarkdown } from './lib/repoAnalysis';
+import { logErrorWithId } from './lib/observability';
 
 type DeepAnalysisContext = {
   repositoryId: Id<'repositories'>;
@@ -62,9 +63,15 @@ export const runDeepAnalysis = internalAction({
         contentMarkdown: markdown,
       });
     } catch (error) {
+      const errorId = logErrorWithId('analysis', 'deep_analysis_failed', error, {
+        repositoryId: args.repositoryId,
+        jobId: args.jobId,
+      });
       await ctx.runMutation(internal.analysis.failDeepAnalysis, {
         jobId: args.jobId,
-        errorMessage: error instanceof Error ? error.message : 'Unknown deep analysis error',
+        errorMessage: `${
+          error instanceof Error ? error.message : 'Unknown deep analysis error'
+        }\n\nReference: ${errorId}`,
       });
     }
   },

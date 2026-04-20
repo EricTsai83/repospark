@@ -4,6 +4,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalAction } from './_generated/server';
 import { deleteSandbox, getSandboxState, stopSandbox } from './daytona';
+import { logErrorWithId, logInfo } from './lib/observability';
 
 export const runSandboxCleanup = internalAction({
   args: {
@@ -26,10 +27,17 @@ export const runSandboxCleanup = internalAction({
         jobId: args.jobId,
       });
     } catch (error) {
+      const errorId = logErrorWithId('ops', 'sandbox_cleanup_failed', error, {
+        sandboxId: args.sandboxId,
+        jobId: args.jobId,
+        remoteId: sandbox.remoteId,
+      });
       await ctx.runMutation(internal.ops.failSandboxCleanup, {
         sandboxId: args.sandboxId,
         jobId: args.jobId,
-        errorMessage: error instanceof Error ? error.message : 'Unknown sandbox cleanup error',
+        errorMessage: `${
+          error instanceof Error ? error.message : 'Unknown sandbox cleanup error'
+        }\n\nReference: ${errorId}`,
       });
     }
   },
@@ -60,7 +68,9 @@ export const sweepExpiredSandboxes = internalAction({
       return;
     }
 
-    console.log(`[sweep] Found ${expired.length} sandbox(es) past TTL, reconciling…`);
+    logInfo('sweep', 'expired_sandboxes_found', {
+      count: expired.length,
+    });
 
     for (const entry of expired) {
       try {
@@ -72,14 +82,19 @@ export const sweepExpiredSandboxes = internalAction({
             sandboxId: entry.sandboxId as never,
             newStatus: 'archived',
           });
-          console.log(
-            `[sweep] Sandbox ${entry.remoteId} is ${daytonaState} on Daytona → marked archived in DB.`,
-          );
+          logInfo('sweep', 'sandbox_marked_archived', {
+            sandboxId: entry.sandboxId,
+            remoteId: entry.remoteId,
+            daytonaState,
+          });
         } else if (daytonaState === 'stopped') {
           // Still on disk but stopped — proactively delete to free disk cost
           try {
             await deleteSandbox(entry.remoteId);
-            console.log(`[sweep] Deleted stopped sandbox ${entry.remoteId} (past TTL).`);
+            logInfo('sweep', 'stopped_sandbox_deleted', {
+              sandboxId: entry.sandboxId,
+              remoteId: entry.remoteId,
+            });
             await ctx.runMutation(internal.ops.markSandboxSwept, {
               sandboxId: entry.sandboxId as never,
               newStatus: 'archived',
@@ -94,15 +109,16 @@ export const sweepExpiredSandboxes = internalAction({
             sandboxId: entry.sandboxId as never,
             newStatus: 'stopped',
           });
-          console.log(
-            `[sweep] Sandbox ${entry.remoteId} still running past TTL → marked stopped, will delete next cycle.`,
-          );
+          logInfo('sweep', 'running_sandbox_stopped_for_ttl', {
+            sandboxId: entry.sandboxId,
+            remoteId: entry.remoteId,
+          });
         }
       } catch (error) {
-        console.error(
-          `[sweep] Error processing sandbox ${entry.remoteId}:`,
-          error instanceof Error ? error.message : error,
-        );
+        logErrorWithId('sweep', 'sandbox_reconciliation_failed', error, {
+          sandboxId: entry.sandboxId,
+          remoteId: entry.remoteId,
+        });
       }
     }
   },

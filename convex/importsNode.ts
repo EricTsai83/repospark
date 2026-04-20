@@ -13,6 +13,7 @@ import {
   createManifestArtifactMarkdown,
   createRepoFileRecords,
 } from './lib/repoAnalysis';
+import { logErrorWithId, logInfo, logWarn } from './lib/observability';
 
 type ReadyImportContext = {
   kind: 'ready';
@@ -253,13 +254,17 @@ export const runImportPipeline = internalAction({
       // and will auto-wake if Deep Path needs it later.
       try {
         await stopSandbox(sandbox.remoteId);
-        console.log(`[import] Sandbox ${sandbox.remoteId} stopped after import to save resources.`);
+        logInfo('import', 'sandbox_stopped_after_import', {
+          repositoryId: importContext.repositoryId,
+          sandboxRemoteId: sandbox.remoteId,
+        });
       } catch (stopError) {
         // Non-fatal: sandbox will auto-stop after the idle interval anyway.
-        console.warn(
-          `[import] Failed to eagerly stop sandbox ${sandbox.remoteId}:`,
-          stopError instanceof Error ? stopError.message : stopError,
-        );
+        logWarn('import', 'sandbox_stop_failed_after_import', {
+          repositoryId: importContext.repositoryId,
+          sandboxRemoteId: sandbox.remoteId,
+          error: stopError instanceof Error ? stopError.message : String(stopError),
+        });
       }
     } catch (error) {
       let errorMessage = error instanceof Error ? error.message : 'Unknown import error';
@@ -287,10 +292,16 @@ export const runImportPipeline = internalAction({
         return;
       }
 
+      const errorId = logErrorWithId('import', 'run_import_pipeline_failed', error, {
+        importId: args.importId,
+        repositoryId: importContext.repositoryId,
+        jobId: importContext.jobId,
+      });
+
       await ctx.runMutation(internal.imports.markImportFailed, {
         importId: args.importId,
         jobId: importContext.jobId,
-        errorMessage,
+        errorMessage: `${errorMessage}\n\nReference: ${errorId}`,
       });
     }
   },

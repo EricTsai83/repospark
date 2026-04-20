@@ -1,11 +1,12 @@
-import { WarningCircleIcon, PaperPlaneTiltIcon, ArrowsClockwiseIcon } from '@phosphor-icons/react';
+import { PaperPlaneTiltIcon } from '@phosphor-icons/react';
 import type { Doc } from '../../convex/_generated/dataModel';
+import { AppNotice } from '@/components/app-notice';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import type { ThreadId, ChatMode } from '@/lib/types';
+import type { ThreadId, ChatMode, DeepModeStatus } from '@/lib/types';
 
 export function ChatPanel({
   selectedThreadId,
@@ -17,6 +18,7 @@ export function ChatPanel({
   isSending,
   onSendMessage,
   deepModeAvailable,
+  deepModeStatus,
   isSyncing,
   onSync,
 }: {
@@ -29,6 +31,7 @@ export function ChatPanel({
   isSending: boolean;
   onSendMessage: (e: React.FormEvent<HTMLFormElement>) => Promise<void>;
   deepModeAvailable: boolean;
+  deepModeStatus: DeepModeStatus | null;
   isSyncing: boolean;
   onSync: () => void;
 }) {
@@ -37,26 +40,17 @@ export function ChatPanel({
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-3 px-6 py-6">
           {chatMode === 'deep' && !deepModeAvailable ? (
-            <div className="flex items-start gap-3 border border-border bg-muted/50 px-4 py-3">
-              <WarningCircleIcon size={18} weight="fill" className="mt-0.5 shrink-0 text-muted-foreground" />
-              <div className="min-w-0">
-                <p className="text-sm font-medium">Sandbox expired</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Deep mode is unavailable because the sandbox has been reclaimed.
-                  Sync the repository to provision a fresh sandbox, or switch to Quick mode.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2 gap-1.5 text-xs"
-                  disabled={isSyncing}
-                  onClick={onSync}
-                >
-                  <ArrowsClockwiseIcon weight="bold" className={isSyncing ? 'animate-spin' : ''} />
-                  {isSyncing ? 'Syncing…' : 'Sync now'}
-                </Button>
-              </div>
-            </div>
+            <AppNotice
+              title={getDeepModeTitle(deepModeStatus?.reasonCode)}
+              message={
+                deepModeStatus?.message ??
+                'Deep mode is unavailable right now. Sync the repository to provision a fresh sandbox, or switch to Quick mode.'
+              }
+              tone="warning"
+              actionLabel={isSyncing ? 'Syncing…' : 'Sync now'}
+              actionDisabled={isSyncing}
+              onAction={onSync}
+            />
           ) : null}
           {messages === undefined ? (
             <p className="text-sm text-muted-foreground">Loading conversation…</p>
@@ -133,14 +127,44 @@ function EmptyChatHint() {
 
 function MessageBubble({ message }: { message: Doc<'messages'> }) {
   const isUser = message.role === 'user';
+  const statusLabel = getMessageStatusLabel(message.status);
   return (
     <Card className={cn('p-4', isUser ? 'bg-muted border-transparent' : 'border-transparent bg-transparent px-0')}>
       <div className="mb-1 flex items-center justify-between gap-3">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{message.role}</p>
-        <p className="text-[10px] text-muted-foreground">{message.status}</p>
+        <p className="text-[10px] text-muted-foreground">{statusLabel}</p>
       </div>
       <p className="whitespace-pre-wrap text-sm leading-6">{message.content || '…'}</p>
       {message.errorMessage ? <p className="mt-2 text-xs text-destructive">{message.errorMessage}</p> : null}
     </Card>
   );
+}
+
+function getDeepModeTitle(reasonCode: DeepModeStatus['reasonCode'] | undefined) {
+  switch (reasonCode) {
+    case 'sandbox_provisioning':
+      return 'Sandbox still provisioning';
+    case 'missing_sandbox':
+      return 'Sandbox not ready yet';
+    case 'sandbox_unavailable':
+      return 'Sandbox no longer available';
+    case 'sandbox_expired':
+    default:
+      return 'Sandbox expired';
+  }
+}
+
+function getMessageStatusLabel(status: Doc<'messages'>['status']) {
+  switch (status) {
+    case 'pending':
+      return 'Queued';
+    case 'streaming':
+      return 'Generating';
+    case 'completed':
+      return 'Ready';
+    case 'failed':
+      return 'Failed';
+    default:
+      return status;
+  }
 }
