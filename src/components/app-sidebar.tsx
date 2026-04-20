@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { PlusIcon, MagnifyingGlassIcon, ChatCircleIcon, TrashIcon, GlobeIcon, LockIcon } from '@phosphor-icons/react';
 import type { Doc } from '../../convex/_generated/dataModel';
@@ -149,6 +149,12 @@ function ThreadsSection({
       onSelectThread(threadId);
     }, [repositoryId, chatMode, createThreadMutation, onSelectThread]),
   );
+
+  useEffect(() => {
+    if (threads?.length === 0 && selectedThreadId !== null) {
+      onSelectThread(null);
+    }
+  }, [threads, selectedThreadId, onSelectThread]);
 
   return (
     <>
