@@ -32,7 +32,7 @@ export function SignedOutShell() {
           <div className="flex items-center gap-3">
             <Logo size={36} />
             <div className="min-w-0 leading-tight">
-              <div className="text-sm font-semibold tracking-tight">Architect Agent</div>
+              <div className="text-sm font-semibold tracking-tight">RepoSpark</div>
               <div className="text-[11px] text-muted-foreground">Grounded codebase answers</div>
             </div>
           </div>
@@ -47,7 +47,7 @@ export function SignedOutShell() {
         <section className="flex flex-col gap-6">
           <div className="inline-flex w-fit items-center gap-2 border border-border bg-card/60 px-2.5 py-1 text-[11px] font-medium tracking-wide text-muted-foreground backdrop-blur">
             <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping bg-primary opacity-75" />
+              <span className="absolute inline-flex h-full w-full bg-primary opacity-75" />
               <span className="relative inline-flex h-1.5 w-1.5 bg-primary" />
             </span>
             <span className="uppercase">Early access · open source</span>

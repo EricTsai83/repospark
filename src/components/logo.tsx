@@ -34,7 +34,7 @@ export function Logo({ size = 36, className, hero = false }: LogoProps) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       role="img"
-      aria-label="Architect Agent logo"
+      aria-label="RepoSpark logo"
       className={className}
     >
       {hero ? <circle cx={VB / 2} cy={VB / 2} r={VB / 2 - 4} fill="url(#aaLogoHalo)" /> : null}

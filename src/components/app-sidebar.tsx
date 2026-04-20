@@ -1,24 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
-import {
-  PlusIcon,
-  MagnifyingGlassIcon,
-  ChatCircleIcon,
-  TrashIcon,
-  GlobeIcon,
-  LockIcon,
-} from '@phosphor-icons/react';
+import { PlusIcon, MagnifyingGlassIcon, ChatCircleIcon, TrashIcon, GlobeIcon, LockIcon } from '@phosphor-icons/react';
 import type { Doc } from '../../convex/_generated/dataModel';
 import { api } from '../../convex/_generated/api';
 import { ProfileCard } from '@/components/profile-card';
 import { Button } from '@/components/ui/button';
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenuButton,
-} from '@/components/ui/sidebar';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenuButton } from '@/components/ui/sidebar';
 import { Logo } from '@/components/logo';
 import { ImportRepoDialog } from '@/components/import-repo-dialog';
 import { useAsyncCallback } from '@/hooks/use-async-callback';
@@ -59,7 +46,7 @@ export function AppSidebar({
       <SidebarHeader>
         <Logo size={30} />
         <div className="min-w-0 leading-tight">
-          <div className="truncate text-sm font-semibold tracking-tight">Architect Agent</div>
+          <div className="truncate text-sm font-semibold tracking-tight">RepoSpark</div>
           <div className="truncate text-[11px] text-muted-foreground">Grounded codebase answers</div>
         </div>
       </SidebarHeader>
@@ -99,15 +86,14 @@ export function AppSidebar({
                   <GlobeIcon size={13} className="shrink-0 text-muted-foreground" weight="bold" aria-hidden="true" />
                 )}
                 <p className="min-w-0 flex-1 truncate text-sm font-medium">{repository.sourceRepoFullName}</p>
-                <span className="shrink-0 text-xs text-muted-foreground">{repository.visibility === 'private' ? 'Private' : 'Public'}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {repository.visibility === 'private' ? 'Private' : 'Public'}
+                </span>
                 {/* Orange dot when remote has new commits */}
                 {repository.latestRemoteSha &&
                   repository.lastSyncedCommitSha &&
                   repository.latestRemoteSha !== repository.lastSyncedCommitSha && (
-                    <span
-                      className="h-2 w-2 shrink-0 rounded-full bg-orange-500"
-                      title="New commits available"
-                    />
+                    <span className="h-2 w-2 shrink-0 rounded-full bg-orange-500" title="New commits available" />
                   )}
               </SidebarMenuButton>
             ))
@@ -175,9 +161,7 @@ function ThreadsSection({
       return;
     }
     const preferred =
-      defaultThreadId && threads.some((thread) => thread._id === defaultThreadId)
-        ? defaultThreadId
-        : threads[0]._id;
+      defaultThreadId && threads.some((thread) => thread._id === defaultThreadId) ? defaultThreadId : threads[0]._id;
     if (!selectedThreadId || !threads.some((t) => t._id === selectedThreadId)) {
       onSelectThread(preferred);
     }
@@ -286,4 +270,3 @@ const ThreadsList = memo(function ThreadsList({
     </>
   );
 });
-
