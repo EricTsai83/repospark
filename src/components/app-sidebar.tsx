@@ -5,6 +5,7 @@ import type { Doc } from '../../convex/_generated/dataModel';
 import { api } from '../../convex/_generated/api';
 import { ProfileCard } from '@/components/profile-card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenuButton } from '@/components/ui/sidebar';
 import { Logo } from '@/components/logo';
 import { ImportRepoDialog } from '@/components/import-repo-dialog';
@@ -52,13 +53,17 @@ export function AppSidebar({
       </SidebarHeader>
 
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <div className="flex flex-1 items-center gap-2 border border-border bg-card px-2.5 py-1.5">
-          <MagnifyingGlassIcon size={14} className="shrink-0 text-muted-foreground" weight="bold" />
-          <input
+        <div className="relative flex-1">
+          <MagnifyingGlassIcon
+            size={14}
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+            weight="bold"
+          />
+          <Input
             value={repoSearch}
             onChange={(e) => setRepoSearch(e.target.value)}
             placeholder="Search…"
-            className="w-full bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+            className="h-8 border-border bg-card pl-8 text-xs"
           />
         </div>
         <ImportRepoDialog onImported={onImported} />
@@ -246,7 +251,7 @@ const ThreadsList = memo(function ThreadsList({
           <SidebarMenuButton
             selected={selectedThreadId === thread._id}
             onClick={() => onSelectThread(thread._id)}
-            className="py-1.5 pr-8"
+            className="py-1.5 pr-10"
           >
             <ChatCircleIcon
               size={14}

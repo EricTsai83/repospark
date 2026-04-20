@@ -1,6 +1,7 @@
 import { httpRouter } from 'convex/server';
 import { internal } from './_generated/api';
 import { httpAction } from './_generated/server';
+import { createOpaqueErrorId, logErrorWithId, logInfo, logWarn } from './lib/observability';
 
 const http = httpRouter();
 
@@ -72,12 +73,16 @@ http.route({
         repositorySelection: details.repositorySelection,
       });
 
+      logInfo('http', 'github_callback_completed', {
+        installationId,
+      });
       return Response.redirect(`${siteUrl}?github_connected=true`, 302);
     } catch (error) {
-      console.error('[http] GitHub callback error:', error);
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const errorId = logErrorWithId('http', 'github_callback_failed', error, {
+        installationId: installationIdParam,
+      });
       return Response.redirect(
-        `${siteUrl}?github_error=${encodeURIComponent(message)}`,
+        `${siteUrl}?github_error=callback_failed&error_id=${encodeURIComponent(errorId)}`,
         302,
       );
     }
@@ -103,7 +108,7 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const webhookSecret = process.env.GITHUB_APP_WEBHOOK_SECRET;
     if (!webhookSecret) {
-      console.error('[webhook] GITHUB_APP_WEBHOOK_SECRET is not set.');
+      logErrorWithId('webhook', 'missing_webhook_secret', new Error('GITHUB_APP_WEBHOOK_SECRET is not set.'));
       return new Response('Server misconfigured', { status: 500 });
     }
 
@@ -130,6 +135,9 @@ http.route({
 
     // Constant-time comparison to prevent timing attacks
     if (!constantTimeEqual(computed, signature)) {
+      logWarn('webhook', 'signature_verification_failed', {
+        errorId: createOpaqueErrorId('webhook_signature'),
+      });
       return new Response('Invalid signature', { status: 401 });
     }
 
@@ -168,6 +176,12 @@ http.route({
           });
           break;
       }
+
+      logInfo('webhook', 'installation_event_processed', {
+        event,
+        action: payload.action,
+        installationId,
+      });
     }
 
     return new Response('OK', { status: 200 });

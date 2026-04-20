@@ -1,7 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useConvexAuth } from 'convex/react';
-import { Button } from '@/components/ui/button';
+import { AppNotice } from '@/components/app-notice';
+import { ScreenState } from '@/components/screen-state';
 import { useConvexAuthStatus } from '@/providers/convex-provider-with-auth-kit';
 
 const HomePage = lazy(async () => {
@@ -35,13 +36,14 @@ export default function App() {
   return (
     <div className="relative flex h-dvh overflow-hidden bg-background">
       {authError ? (
-        <div className="absolute inset-x-0 top-0 z-10 border-b border-destructive/20 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p>{authError}</p>
-            <Button variant="outline" size="sm" className="w-fit" onClick={() => window.location.reload()}>
-              Refresh
-            </Button>
-          </div>
+        <div className="absolute inset-x-0 top-0 z-10 border-b border-border px-4 py-3">
+          <AppNotice
+            title="Authentication error"
+            message={authError}
+            tone="error"
+            actionLabel="Refresh"
+            onAction={() => window.location.reload()}
+          />
         </div>
       ) : null}
       <Routes>
@@ -76,8 +78,6 @@ export default function App() {
 
 function AuthLoadingScreen() {
   return (
-    <div className="flex h-full w-full items-center justify-center px-6 text-sm text-muted-foreground">
-      Authenticating…
-    </div>
+    <ScreenState title="Authenticating…" description="Reconnecting your session and loading your workspace." />
   );
 }

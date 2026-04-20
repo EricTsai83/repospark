@@ -39,6 +39,82 @@ async function finalizeImportCancellation(
   }
 }
 
+async function applyImportRunningState(
+  ctx: MutationCtx,
+  args: {
+    importId: Id<'imports'>;
+    jobId: Id<'jobs'>;
+  },
+) {
+  const now = Date.now();
+  await ctx.db.patch(args.importId, {
+    status: 'running',
+    startedAt: now,
+  });
+  await ctx.db.patch(args.jobId, {
+    status: 'running',
+    stage: 'provisioning_sandbox',
+    progress: 0.1,
+    startedAt: now,
+  });
+}
+
+async function applyImportCompletionState(
+  ctx: MutationCtx,
+  args: {
+    importId: Id<'imports'>;
+    repositoryId: Id<'repositories'>;
+    jobId: Id<'jobs'>;
+    sandboxId: Id<'sandboxes'>;
+    commitSha: string;
+    branch?: string;
+    detectedLanguages: string[];
+    packageManagers: string[];
+    entrypoints: string[];
+    summary: string;
+    readmeSummary: string;
+    architectureSummary: string;
+    repositoryDefaultBranch?: string;
+  },
+) {
+  const completedAt = Date.now();
+
+  await ctx.db.patch(args.importId, {
+    status: 'completed',
+    commitSha: args.commitSha,
+    branch: args.branch,
+    completedAt,
+  });
+  await ctx.db.patch(args.jobId, {
+    status: 'completed',
+    stage: 'completed',
+    progress: 1,
+    completedAt,
+    outputSummary: args.summary,
+  });
+  await ctx.db.patch(args.repositoryId, {
+    importStatus: 'completed',
+    latestImportId: args.importId,
+    latestImportJobId: args.jobId,
+    latestSandboxId: args.sandboxId,
+    defaultBranch: args.branch ?? args.repositoryDefaultBranch,
+    summary: args.summary,
+    readmeSummary: args.readmeSummary,
+    architectureSummary: args.architectureSummary,
+    detectedLanguages: args.detectedLanguages,
+    packageManagers: args.packageManagers,
+    entrypoints: args.entrypoints,
+    lastImportedAt: completedAt,
+    lastIndexedAt: completedAt,
+    lastSyncedCommitSha: args.commitSha,
+  });
+  await ctx.db.patch(args.sandboxId, {
+    status: 'ready',
+    lastHeartbeatAt: completedAt,
+    lastUsedAt: completedAt,
+  });
+}
+
 export const getImportContext = internalQuery({
   args: {
     importId: v.id('imports'),
@@ -116,17 +192,7 @@ export const markImportRunning = internalMutation({
       };
     }
 
-    const now = Date.now();
-    await ctx.db.patch(args.importId, {
-      status: 'running',
-      startedAt: now,
-    });
-    await ctx.db.patch(args.jobId, {
-      status: 'running',
-      stage: 'provisioning_sandbox',
-      progress: 0.1,
-      startedAt: now,
-    });
+    await applyImportRunningState(ctx, args);
 
     return {
       kind: 'running' as const,
@@ -297,39 +363,20 @@ export const persistImportResults = internalMutation({
       });
     }
 
-    await ctx.db.patch(args.importId, {
-      status: 'completed',
+    await applyImportCompletionState(ctx, {
+      importId: args.importId,
+      repositoryId: args.repositoryId,
+      jobId: args.jobId,
+      sandboxId: args.sandboxId,
       commitSha: args.commitSha,
       branch: args.branch,
-      completedAt: Date.now(),
-    });
-    await ctx.db.patch(args.jobId, {
-      status: 'completed',
-      stage: 'completed',
-      progress: 1,
-      completedAt: Date.now(),
-      outputSummary: args.summary,
-    });
-    await ctx.db.patch(args.repositoryId, {
-      importStatus: 'completed',
-      latestImportId: args.importId,
-      latestImportJobId: args.jobId,
-      latestSandboxId: args.sandboxId,
-      defaultBranch: args.branch ?? repository.defaultBranch,
-      summary: args.summary,
-      readmeSummary: args.readmeSummary,
-      architectureSummary: args.architectureSummary,
       detectedLanguages: args.detectedLanguages,
       packageManagers: args.packageManagers,
       entrypoints: args.entrypoints,
-      lastImportedAt: Date.now(),
-      lastIndexedAt: Date.now(),
-      lastSyncedCommitSha: args.commitSha,
-    });
-    await ctx.db.patch(args.sandboxId, {
-      status: 'ready',
-      lastHeartbeatAt: Date.now(),
-      lastUsedAt: Date.now(),
+      summary: args.summary,
+      readmeSummary: args.readmeSummary,
+      architectureSummary: args.architectureSummary,
+      repositoryDefaultBranch: repository.defaultBranch,
     });
 
     if (

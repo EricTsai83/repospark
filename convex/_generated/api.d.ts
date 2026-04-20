@@ -22,6 +22,7 @@ import type * as importsNode from "../importsNode.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_constants from "../lib/constants.js";
 import type * as lib_github from "../lib/github.js";
+import type * as lib_observability from "../lib/observability.js";
 import type * as lib_repoAnalysis from "../lib/repoAnalysis.js";
 import type * as lib_sandboxAvailability from "../lib/sandboxAvailability.js";
 import type * as lib_sandboxNames from "../lib/sandboxNames.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/constants": typeof lib_constants;
   "lib/github": typeof lib_github;
+  "lib/observability": typeof lib_observability;
   "lib/repoAnalysis": typeof lib_repoAnalysis;
   "lib/sandboxAvailability": typeof lib_sandboxAvailability;
   "lib/sandboxNames": typeof lib_sandboxNames;
