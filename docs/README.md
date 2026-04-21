@@ -56,6 +56,14 @@ This folder contains the system design documentation for the current Repospark c
 - Do not invent designs that do not exist, and do not describe future ideas as current capabilities.
 - Each document should stay focused on answering a small number of important questions and avoid repetition.
 
+## Archived Design Notes
+
+Older design notes that are no longer part of the core reading set live under `archive/`:
+
+- `archive/daytona-sandbox-lifecycle.md`
+- `archive/fast-path-vs-deep-path.md`
+- `archive/sandbox-cost-analysis.md`
+
 ## Out of Scope
 
 The following are intentionally outside the scope of this document set:

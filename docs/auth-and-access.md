@@ -11,7 +11,7 @@ flowchart TD
   User[User]
   Frontend[ReactFrontend]
   WorkOS[WorkOSAuthKit]
-  ConvexClient[ConvexProviderWithAuth]
+  ConvexClient[ConvexProviderWithAuthKit]
   ConvexServer[ConvexFunctions]
   GitHubApp[GitHubApp]
 
@@ -48,8 +48,9 @@ This wrapper has two responsibilities:
 The frontend auth boundary can therefore be summarized as:
 
 - WorkOS: produces sign-in state and an access token
-- `ConvexProviderWithAuth`: attaches that token to all Convex requests
-- `App.tsx`: protects `/chat` via `useConvexAuth()`
+- `ConvexProviderWithAuthKit`: attaches that token to all Convex requests
+- `ProtectedLayout`: protects `/chat` via `useConvexAuth()`
+- `LandingRoute`: redirects authenticated users from `/` to `/chat`
 
 ## Backend Authentication
 
@@ -90,7 +91,7 @@ This pattern is more stable than using email or display name and prevents users 
 
 ### Frontend route guards are not the only security layer
 
-`ProtectedRoute` is only a UX guard, not the sole access-control mechanism. Actual security still depends on:
+`ProtectedLayout` and `LandingRoute` are UX guards, not the sole access-control mechanism. Actual security still depends on:
 
 - Convex auth configuration
 - `requireViewerIdentity()`
@@ -170,15 +171,26 @@ These values are exposed to the browser:
 
 ### Convex runtime env
 
-These values must exist only in the Convex runtime:
+These values must exist only in the Convex runtime. This list intentionally matches `integrations-and-operations.md`:
 
 - `WORKOS_CLIENT_ID`
 - `GITHUB_APP_ID`
 - `GITHUB_APP_SLUG`
 - `GITHUB_APP_PRIVATE_KEY`
 - `GITHUB_APP_WEBHOOK_SECRET`
+- `SITE_URL`
 - `OPENAI_API_KEY`
-- `DAYTONA_*`
+- `OPENAI_MODEL`
+- `DAYTONA_API_KEY`
+- `DAYTONA_API_URL`
+- `DAYTONA_TARGET`
+- `DAYTONA_AUTO_STOP_MINUTES`
+- `DAYTONA_AUTO_ARCHIVE_MINUTES`
+- `DAYTONA_AUTO_DELETE_MINUTES`
+- `DAYTONA_CPU_LIMIT`
+- `DAYTONA_MEMORY_GIB`
+- `DAYTONA_DISK_GIB`
+- `DAYTONA_NETWORK_ALLOW_LIST`
 
 This separation matters because the GitHub App private key, webhook secret, and OpenAI key must never leak into the frontend.
 

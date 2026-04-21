@@ -51,25 +51,25 @@ The auto-stop at 30 minutes already handles 90% of cost optimization.
 ### Option A: No Change
 - **Cost:** Acceptable (auto-stop handles it)
 - **UX:** User confused when Deep mode silently fails after 24h
-- **Verdict:** ❌ The silent failure is a real problem
+- **Verdict:** The silent failure is a real problem
 
 ### Option B: Read-Only Badge + Friendly Error (CHOSEN)
 - **Cost:** Zero impact (just visibility)
-- **UX:** Removes #1 confusion point; user knows when to re-import
+- **UX:** Removes the main confusion point; user knows when to re-import
 - **Effort:** ~2 hours frontend, zero backend changes
-- **Verdict:** ✅ Best cost-to-value ratio
+- **Verdict:** Best cost-to-value ratio
 
 ### Option C: Full Manual Start/Stop
 - **Cost:** Saves at most 30 min of idle billing per session (pennies)
 - **UX:** Adds infrastructure concepts to a code analysis tool
 - **Effort:** ~8 hours (new mutations, error handling, loading states)
-- **Verdict:** ❌ Not worth the complexity
+- **Verdict:** Not worth the complexity
 
 ### Option D: Lazy Provisioning (on-demand sandbox)
 - **Cost:** Significant savings IF many users never use Deep mode
 - **UX:** Faster import, but slower first Deep mode (30-60s extra)
 - **Effort:** ~16 hours (refactor import pipeline)
-- **Verdict:** ❌ Defer to v2; need usage data first
+- **Verdict:** Defer to v2; need usage data first
 
 ---
 

@@ -247,3 +247,5 @@ This split allows the UI, background workflows, and analysis features to share t
 - `repositories` aggregates many "latest state" fields, which makes reads convenient but also keeps it in an orchestration-heavy role.
 - The workflow is still assembled mostly through status fields and the scheduler rather than an explicit domain-event model.
 - `jobs` provides a unified tracking layer that simplifies the UI, but the details of each job kind still require reading the implementation.
+- `jobs.kind = 'index'` is currently a reserved enum value; the codebase does not insert jobs with `kind: 'index'`, and indexing still happens inside the import pipeline.
+- `analysisArtifacts.version` is currently always inserted as `1`, so artifact version management is not implemented yet.
