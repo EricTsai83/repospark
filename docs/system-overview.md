@@ -33,30 +33,35 @@ flowchart TD
 
 ### Frontend
 
-The frontend is a single-page React application built with Vite, routed with `react-router-dom`, and styled with Tailwind plus shadcn UI components. The entry point is `src/main.tsx`, where providers are layered roughly in this order:
+The frontend is a single-page React application built with Vite, routed with the React Router data router, and styled with Tailwind plus shadcn UI components. The entry point is `src/main.tsx`, where the main providers are layered in this order:
 
 1. `ErrorBoundary`
 2. `ThemeProvider`
-3. `BrowserRouter`
-4. `AuthKitProvider`
-5. `ConvexProviderWithAuthKit`
-6. `App`
+3. `AuthKitProvider`
+4. `ConvexProviderWithAuthKit`
+5. `App`
 
-`src/App.tsx` currently exposes only two primary routes:
+`src/App.tsx` no longer declares the route table directly. Instead, it creates the router once with `createAppRouter()` and renders it through `<AppRouter router={router} />`.
 
-- `/`: the landing or signed-out shell for unauthenticated users
-- `/chat`: the main authenticated application surface
+The route table lives in `src/router.tsx`, where `appRoutes` is turned into the browser data router and defines:
+
+- `/` through `AppLayout`
+- the landing experience through `LandingRoute`
+- the authenticated `/chat` surface through `ProtectedLayout`
+- lazy loading for the chat page via `loadChatRoute`
+
+Layout composition and route-guard behavior now live in `src/router-layouts.tsx`, which centralizes `AppLayout`, `LandingRoute`, and `ProtectedLayout`.
 
 ### Application Shell
 
-The main application shell is concentrated in `src/components/repository-shell.tsx`. This component currently owns most of the product-level orchestration:
+The main application shell is still centered on `src/components/repository-shell.tsx`, but it no longer owns all product-level orchestration directly. The component now coordinates several extracted hooks:
 
-- loading the repository list and the current repository detail
-- managing the current thread, chat mode, active tab, and dialog state
-- triggering sync, repository deletion, thread deletion, deep analysis, and message sending
-- distributing data to the sidebar, top bar, chat panel, jobs view, and artifacts view
+- `useRepositoryActions`: sync, repository deletion, thread deletion, deep analysis, and message sending
+- `useRepositorySelection`: effective repository selection and repository-loading state
+- `useCheckForUpdates`: lightweight remote-commit checks on focus and repository switch
+- `useGitHubConnection`, `useAsyncCallback`, `useRelativeTime`, and `useIsMobile`: focused frontend utilities used elsewhere in the shell and surrounding UI
 
-In other words, Repospark currently follows a "thin routes, thick shell" frontend structure.
+`RepositoryShell` still coordinates the sidebar, top bar, tabs, and dialog state, but the orchestration logic is less concentrated than before.
 
 ### Backend
 
@@ -150,7 +155,7 @@ flowchart TD
 
 ### Trade-Offs
 
-- `RepositoryShell` currently carries a large amount of UI orchestration, so frontend state boundaries remain fairly centralized.
+- `RepositoryShell` still carries a large amount of UI orchestration even after the hook extraction, so frontend state boundaries remain fairly centralized.
 - Both chat and deep analysis depend on the quality of imported data and sandbox availability.
 - The system does not yet have an explicit domain-event model and still relies mostly on table status fields plus the scheduler.
 
