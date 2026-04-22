@@ -15,6 +15,8 @@ import {
 } from './lib/repoAnalysis';
 import { logErrorWithId, logInfo, logWarn } from './lib/observability';
 
+const PERSIST_BATCH_SIZE = 200;
+
 type ReadyImportContext = {
   kind: 'ready';
   repositoryId: Id<'repositories'>;
@@ -32,7 +34,11 @@ type CancelledImportContext = {
   reason: string;
 };
 
-type ImportContext = ReadyImportContext | CancelledImportContext;
+type CompletedImportContext = {
+  kind: 'completed';
+};
+
+type ImportContext = ReadyImportContext | CancelledImportContext | CompletedImportContext;
 
 export const runImportPipeline = internalAction({
   args: {
@@ -51,6 +57,10 @@ export const runImportPipeline = internalAction({
         return;
       }
 
+      if (importContext.kind === 'completed') {
+        return;
+      }
+
       if (importContext.kind === 'cancelled') {
         await ctx.runMutation(internal.imports.cancelImport, {
           importId: args.importId,
@@ -63,7 +73,14 @@ export const runImportPipeline = internalAction({
       const runningState = (await ctx.runMutation(internal.imports.markImportRunning, {
         importId: args.importId,
         jobId: importContext.jobId,
-      })) as { kind: 'running' } | { kind: 'cancelled'; reason: string };
+      })) as
+        | { kind: 'running' }
+        | { kind: 'completed' }
+        | { kind: 'cancelled'; reason: string };
+
+      if (runningState.kind === 'completed') {
+        return;
+      }
 
       if (runningState.kind === 'cancelled') {
         await ctx.runMutation(internal.imports.cancelImport, {
@@ -205,21 +222,11 @@ export const runImportPipeline = internalAction({
         files: fileRecords,
       });
 
-      const persistResult = (await ctx.runMutation(internal.imports.persistImportResults, {
+      const headerResult = (await ctx.runMutation(internal.imports.persistImportHeader, {
         importId: args.importId,
-        repositoryId: importContext.repositoryId,
         jobId: importContext.jobId,
-        sandboxId,
         commitSha: cloneResult.commitSha,
         branch: cloneResult.branch,
-        detectedLanguages: manifest.detectedLanguages,
-        packageManagers: manifest.packageManagers,
-        entrypoints: manifest.entrypoints,
-        summary: manifest.summary,
-        readmeSummary: summarizeReadme(snapshot.readmeContent),
-        architectureSummary: 'Repository imported and indexed for architecture review.',
-        repoFiles: fileRecords,
-        repoChunks: chunkRecords,
         artifacts: [
           {
             kind: 'manifest' as const,
@@ -249,6 +256,48 @@ export const runImportPipeline = internalAction({
             source: 'heuristic' as const,
           },
         ],
+      })) as { kind: 'ready' } | { kind: 'completed' } | { kind: 'cancelled' };
+
+      if (headerResult.kind !== 'ready') {
+        return;
+      }
+
+      for (const batch of toBatches(fileRecords, PERSIST_BATCH_SIZE)) {
+        const fileBatchResult = (await ctx.runMutation(internal.imports.persistRepoFilesBatch, {
+          importId: args.importId,
+          jobId: importContext.jobId,
+          files: batch,
+        })) as { kind: 'ready' } | { kind: 'completed' } | { kind: 'cancelled' };
+
+        if (fileBatchResult.kind !== 'ready') {
+          return;
+        }
+      }
+
+      for (const batch of toBatches(chunkRecords, PERSIST_BATCH_SIZE)) {
+        const chunkBatchResult = (await ctx.runMutation(internal.imports.persistRepoChunksBatch, {
+          importId: args.importId,
+          jobId: importContext.jobId,
+          chunks: batch,
+        })) as { kind: 'ready' } | { kind: 'completed' } | { kind: 'cancelled' };
+
+        if (chunkBatchResult.kind !== 'ready') {
+          return;
+        }
+      }
+
+      const persistResult = (await ctx.runMutation(internal.imports.finalizeImportCompletion, {
+        importId: args.importId,
+        jobId: importContext.jobId,
+        sandboxId,
+        commitSha: cloneResult.commitSha,
+        branch: cloneResult.branch,
+        detectedLanguages: manifest.detectedLanguages,
+        packageManagers: manifest.packageManagers,
+        entrypoints: manifest.entrypoints,
+        summary: manifest.summary,
+        readmeSummary: summarizeReadme(snapshot.readmeContent),
+        architectureSummary: 'Repository imported and indexed for architecture review.',
       })) as { kind: 'completed' } | { kind: 'cancelled' };
 
       if (persistResult.kind === 'cancelled') {
@@ -294,7 +343,7 @@ export const runImportPipeline = internalAction({
           '\n\nThis repository may not be accessible. Make sure it is included in your GitHub App installation. You can update your repo selection in GitHub Settings > Applications.';
       }
 
-      if (!importContext || importContext.kind === 'cancelled') {
+      if (!importContext || importContext.kind !== 'ready') {
         return;
       }
 
@@ -331,4 +380,12 @@ function summarizeReadme(readme?: string) {
     .slice(0, 4)
     .join(' ')
     .slice(0, 240);
+}
+
+function toBatches<T>(items: T[], batchSize: number): T[][] {
+  const batches: T[][] = [];
+  for (let index = 0; index < items.length; index += batchSize) {
+    batches.push(items.slice(index, index + batchSize));
+  }
+  return batches;
 }

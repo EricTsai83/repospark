@@ -125,18 +125,33 @@ Artifacts currently include at least:
 
 So import is not just "pull the repository." It builds the knowledge base used by later chat and analysis flows.
 
-### 7. Complete the import and switch the latest snapshot
+### 7. Persist the new snapshot in staged batches
 
-Once `persistImportResults` finishes, the system:
+The generated data is not written in one giant transaction anymore. Instead, the system persists it in smaller steps:
+
+1. write import-scoped artifacts and header metadata
+2. write `repoFiles` in batches
+3. write `repoChunks` in batches
+4. finalize the import in one publish step
+
+This order is intentional:
+
+- each batch stays below Convex mutation limits
+- retries can deduplicate previously written rows
+- the repository does not expose the new snapshot until finalize succeeds
+
+### 8. Finalize and publish the snapshot
+
+Only the finalize step is allowed to switch the repository to the new snapshot. At that point the system:
 
 - marks the import and job as completed
 - updates repository summary fields and latest pointers
 - writes `lastImportedAt`, `lastIndexedAt`, and `lastSyncedCommitSha`
 - changes the sandbox state to `ready`
 
-This is the step that makes the repository officially ready for interaction.
+This is the moment the repository officially becomes ready for interaction on the new snapshot.
 
-### 8. Stop the sandbox, but do not delete it immediately
+### 9. Stop the sandbox, but do not delete it immediately
 
 After a successful import, the system attempts to stop the sandbox immediately. The goal is not to remove it, but to:
 
@@ -146,15 +161,17 @@ After a successful import, the system attempts to stop the sandbox immediately. 
 
 So an import completing does not mean the sandbox disappears. It enters a low-cost standby state.
 
-### 9. Clean up superseded snapshots
+### 10. Clean up superseded or partial snapshots
 
-If the repository already had an older completed import, the system cleans up in the background:
+If the repository already had an older completed import, the system cleans up that older snapshot in the background:
 
 - old `repoFiles`
 - old `repoChunks`
 - artifacts produced by the old import job
 
 This keeps the latest import snapshot as the main knowledge source while preventing unbounded data accumulation.
+
+The same cleanup path is also reused for cancelled or failed imports that had already written part of the new snapshot. That prevents half-persisted rows from lingering after the workflow exits early.
 
 ## How Repository Detail Is Assembled
 

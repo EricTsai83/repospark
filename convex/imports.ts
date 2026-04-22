@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, internalQuery, type MutationCtx } from './_generated/server';
 import {
   CASCADE_BATCH_SIZE,
@@ -12,6 +12,54 @@ import {
 const REPOSITORY_DELETION_CANCEL_REASON =
   'Repository deletion is in progress. The import was cancelled before it could finish.';
 const PROVISIONING_SANDBOX_TTL_MS = 30 * 60_000;
+const repoFileRecordValidator = v.object({
+  path: v.string(),
+  parentPath: v.string(),
+  fileType: v.union(v.literal('file'), v.literal('dir')),
+  extension: v.optional(v.string()),
+  language: v.optional(v.string()),
+  sizeBytes: v.number(),
+  isEntryPoint: v.boolean(),
+  isConfig: v.boolean(),
+  isImportant: v.boolean(),
+  summary: v.optional(v.string()),
+});
+const repoChunkRecordValidator = v.object({
+  path: v.string(),
+  chunkIndex: v.number(),
+  startLine: v.number(),
+  endLine: v.number(),
+  chunkKind: v.union(v.literal('code'), v.literal('summary'), v.literal('readme')),
+  symbolName: v.optional(v.string()),
+  symbolKind: v.optional(v.string()),
+  summary: v.string(),
+  content: v.string(),
+});
+const artifactRecordValidator = v.object({
+  kind: v.union(
+    v.literal('manifest'),
+    v.literal('readme_summary'),
+    v.literal('architecture'),
+    v.literal('entrypoints'),
+    v.literal('dependency_overview'),
+    v.literal('deep_analysis'),
+    v.literal('risk_report'),
+  ),
+  title: v.string(),
+  summary: v.string(),
+  contentMarkdown: v.string(),
+  source: v.union(v.literal('heuristic'), v.literal('llm'), v.literal('sandbox')),
+});
+
+type PersistGuardResult =
+  | {
+      kind: 'ready';
+      importRecord: Doc<'imports'>;
+      repository: Doc<'repositories'>;
+      sandbox?: Doc<'sandboxes'>;
+    }
+  | { kind: 'completed' }
+  | { kind: 'cancelled' };
 
 async function finalizeImportCancellation(
   ctx: MutationCtx,
@@ -21,9 +69,18 @@ async function finalizeImportCancellation(
     reason: string;
   },
 ) {
-  const now = Date.now();
   const importRecord = await ctx.db.get(args.importId);
   const job = await ctx.db.get(args.jobId);
+
+  if (importRecord?.status === 'completed') {
+    return { kind: 'completed' as const };
+  }
+
+  if (importRecord?.status === 'cancelled') {
+    return { kind: 'cancelled' as const };
+  }
+
+  const now = Date.now();
 
   if (importRecord) {
     await ctx.db.patch(args.importId, {
@@ -33,7 +90,7 @@ async function finalizeImportCancellation(
     });
   }
 
-  if (job) {
+  if (job && job.status !== 'cancelled') {
     await ctx.db.patch(args.jobId, {
       status: 'cancelled',
       stage: 'cancelled',
@@ -43,6 +100,15 @@ async function finalizeImportCancellation(
       errorMessage: args.reason,
     });
   }
+
+  await ctx.scheduler.runAfter(0, internal.imports.cleanupSupersededImportSnapshot, {
+    importId: args.importId,
+    importJobId: args.jobId,
+  });
+
+  return {
+    kind: 'cancelled' as const,
+  };
 }
 
 async function applyImportRunningState(
@@ -121,6 +187,63 @@ async function applyImportCompletionState(
   });
 }
 
+async function guardPersistStage(
+  ctx: MutationCtx,
+  args: {
+    importId: Id<'imports'>;
+    jobId: Id<'jobs'>;
+    sandboxId?: Id<'sandboxes'>;
+  },
+): Promise<PersistGuardResult> {
+  const importRecord = await ctx.db.get(args.importId);
+  if (!importRecord) {
+    return { kind: 'cancelled' };
+  }
+
+  if (importRecord.status === 'completed') {
+    return { kind: 'completed' };
+  }
+
+  if (importRecord.status === 'cancelled' || importRecord.status === 'failed') {
+    return { kind: 'cancelled' };
+  }
+
+  const repository = await ctx.db.get(importRecord.repositoryId);
+  if (!repository || repository.deletionRequestedAt) {
+    await finalizeImportCancellation(ctx, {
+      importId: args.importId,
+      jobId: args.jobId,
+      reason: REPOSITORY_DELETION_CANCEL_REASON,
+    });
+    return { kind: 'cancelled' };
+  }
+
+  if (!args.sandboxId) {
+    return {
+      kind: 'ready',
+      importRecord,
+      repository,
+    };
+  }
+
+  const sandbox = await ctx.db.get(args.sandboxId);
+  if (!sandbox) {
+    await finalizeImportCancellation(ctx, {
+      importId: args.importId,
+      jobId: args.jobId,
+      reason: REPOSITORY_DELETION_CANCEL_REASON,
+    });
+    return { kind: 'cancelled' };
+  }
+
+  return {
+    kind: 'ready',
+    importRecord,
+    repository,
+    sandbox,
+  };
+}
+
 export const getImportContext = internalQuery({
   args: {
     importId: v.id('imports'),
@@ -129,6 +252,20 @@ export const getImportContext = internalQuery({
     const importRecord = await ctx.db.get(args.importId);
     if (!importRecord) {
       return null;
+    }
+
+    if (importRecord.status === 'completed') {
+      return {
+        kind: 'completed' as const,
+      };
+    }
+
+    if (importRecord.status === 'cancelled' || importRecord.status === 'failed') {
+      return {
+        kind: 'cancelled' as const,
+        jobId: importRecord.jobId,
+        reason: importRecord.errorMessage ?? 'Import is already in a terminal state.',
+      };
     }
 
     const repository = await ctx.db.get(importRecord.repositoryId);
@@ -190,6 +327,19 @@ export const markImportRunning = internalMutation({
     const importRecord = await ctx.db.get(args.importId);
     const job = await ctx.db.get(args.jobId);
     const repository = importRecord ? await ctx.db.get(importRecord.repositoryId) : null;
+
+    if (importRecord?.status === 'completed') {
+      return {
+        kind: 'completed' as const,
+      };
+    }
+
+    if (importRecord?.status === 'cancelled' || importRecord?.status === 'failed') {
+      return {
+        kind: 'cancelled' as const,
+        reason: importRecord.errorMessage ?? 'Import is already in a terminal state.',
+      };
+    }
 
     if (!importRecord || !job || !repository || repository.deletionRequestedAt) {
       return {
@@ -282,10 +432,170 @@ export const attachSandboxRemoteInfo = internalMutation({
   },
 });
 
-export const persistImportResults = internalMutation({
+export const persistImportHeader = internalMutation({
   args: {
     importId: v.id('imports'),
-    repositoryId: v.id('repositories'),
+    jobId: v.id('jobs'),
+    commitSha: v.string(),
+    branch: v.optional(v.string()),
+    artifacts: v.array(artifactRecordValidator),
+  },
+  handler: async (ctx, args) => {
+    const state = await guardPersistStage(ctx, {
+      importId: args.importId,
+      jobId: args.jobId,
+    });
+
+    if (state.kind !== 'ready') {
+      return state;
+    }
+
+    for (const artifact of args.artifacts) {
+      const existingArtifact = await ctx.db
+        .query('analysisArtifacts')
+        .withIndex('by_jobId_and_kind', (q) => q.eq('jobId', args.jobId).eq('kind', artifact.kind))
+        .unique();
+
+      if (existingArtifact) {
+        await ctx.db.patch(existingArtifact._id, {
+          title: artifact.title,
+          summary: artifact.summary,
+          contentMarkdown: artifact.contentMarkdown,
+          source: artifact.source,
+          version: 1,
+        });
+        continue;
+      }
+
+      await ctx.db.insert('analysisArtifacts', {
+        repositoryId: state.repository._id,
+        jobId: args.jobId,
+        ownerTokenIdentifier: state.repository.ownerTokenIdentifier,
+        version: 1,
+        ...artifact,
+      });
+    }
+
+    await ctx.db.patch(args.importId, {
+      commitSha: args.commitSha,
+      branch: args.branch,
+    });
+    await ctx.db.patch(args.jobId, {
+      stage: 'persisting_files',
+      progress: 0.5,
+    });
+
+    return {
+      kind: 'ready' as const,
+    };
+  },
+});
+
+export const persistRepoFilesBatch = internalMutation({
+  args: {
+    importId: v.id('imports'),
+    jobId: v.id('jobs'),
+    files: v.array(repoFileRecordValidator),
+  },
+  handler: async (ctx, args) => {
+    const state = await guardPersistStage(ctx, {
+      importId: args.importId,
+      jobId: args.jobId,
+    });
+
+    if (state.kind !== 'ready') {
+      return state;
+    }
+
+    for (const file of args.files) {
+      const existingFile = await ctx.db
+        .query('repoFiles')
+        .withIndex('by_importId_and_path', (q) => q.eq('importId', args.importId).eq('path', file.path))
+        .unique();
+
+      if (existingFile) {
+        continue;
+      }
+
+      await ctx.db.insert('repoFiles', {
+        repositoryId: state.repository._id,
+        ownerTokenIdentifier: state.repository.ownerTokenIdentifier,
+        importId: args.importId,
+        ...file,
+      });
+    }
+
+    return {
+      kind: 'ready' as const,
+    };
+  },
+});
+
+export const persistRepoChunksBatch = internalMutation({
+  args: {
+    importId: v.id('imports'),
+    jobId: v.id('jobs'),
+    chunks: v.array(repoChunkRecordValidator),
+  },
+  handler: async (ctx, args) => {
+    const state = await guardPersistStage(ctx, {
+      importId: args.importId,
+      jobId: args.jobId,
+    });
+
+    if (state.kind !== 'ready') {
+      return state;
+    }
+
+    await ctx.db.patch(args.jobId, {
+      stage: 'persisting_chunks',
+      progress: 0.75,
+    });
+
+    const fileIdsByPath = new Map<string, Id<'repoFiles'>>();
+    for (const chunk of args.chunks) {
+      let fileId = fileIdsByPath.get(chunk.path);
+      if (!fileId) {
+        const file = await ctx.db
+          .query('repoFiles')
+          .withIndex('by_importId_and_path', (q) => q.eq('importId', args.importId).eq('path', chunk.path))
+          .unique();
+        if (!file) {
+          continue;
+        }
+        fileId = file._id;
+        fileIdsByPath.set(chunk.path, fileId);
+      }
+
+      const existingChunk = await ctx.db
+        .query('repoChunks')
+        .withIndex('by_importId_and_path_and_chunkIndex', (q) =>
+          q.eq('importId', args.importId).eq('path', chunk.path).eq('chunkIndex', chunk.chunkIndex),
+        )
+        .unique();
+
+      if (existingChunk) {
+        continue;
+      }
+
+      await ctx.db.insert('repoChunks', {
+        repositoryId: state.repository._id,
+        ownerTokenIdentifier: state.repository.ownerTokenIdentifier,
+        importId: args.importId,
+        fileId,
+        ...chunk,
+      });
+    }
+
+    return {
+      kind: 'ready' as const,
+    };
+  },
+});
+
+export const finalizeImportCompletion = internalMutation({
+  args: {
+    importId: v.id('imports'),
     jobId: v.id('jobs'),
     sandboxId: v.id('sandboxes'),
     commitSha: v.string(),
@@ -296,107 +606,26 @@ export const persistImportResults = internalMutation({
     summary: v.string(),
     readmeSummary: v.string(),
     architectureSummary: v.string(),
-    repoFiles: v.array(
-      v.object({
-        path: v.string(),
-        parentPath: v.string(),
-        fileType: v.union(v.literal('file'), v.literal('dir')),
-        extension: v.optional(v.string()),
-        language: v.optional(v.string()),
-        sizeBytes: v.number(),
-        isEntryPoint: v.boolean(),
-        isConfig: v.boolean(),
-        isImportant: v.boolean(),
-        summary: v.optional(v.string()),
-      }),
-    ),
-    repoChunks: v.array(
-      v.object({
-        path: v.string(),
-        chunkIndex: v.number(),
-        startLine: v.number(),
-        endLine: v.number(),
-        chunkKind: v.union(v.literal('code'), v.literal('summary'), v.literal('readme')),
-        symbolName: v.optional(v.string()),
-        symbolKind: v.optional(v.string()),
-        summary: v.string(),
-        content: v.string(),
-      }),
-    ),
-    artifacts: v.array(
-      v.object({
-        kind: v.union(
-          v.literal('manifest'),
-          v.literal('readme_summary'),
-          v.literal('architecture'),
-          v.literal('entrypoints'),
-          v.literal('dependency_overview'),
-          v.literal('deep_analysis'),
-          v.literal('risk_report'),
-        ),
-        title: v.string(),
-        summary: v.string(),
-        contentMarkdown: v.string(),
-        source: v.union(v.literal('heuristic'), v.literal('llm'), v.literal('sandbox')),
-      }),
-    ),
   },
   handler: async (ctx, args) => {
-    const importRecord = await ctx.db.get(args.importId);
-    const repository = await ctx.db.get(args.repositoryId);
-    const sandbox = await ctx.db.get(args.sandboxId);
-    if (!importRecord || !repository || repository.deletionRequestedAt || !sandbox) {
-      await finalizeImportCancellation(ctx, {
-        importId: args.importId,
-        jobId: args.jobId,
-        reason: REPOSITORY_DELETION_CANCEL_REASON,
-      });
+    const state = await guardPersistStage(ctx, {
+      importId: args.importId,
+      jobId: args.jobId,
+      sandboxId: args.sandboxId,
+    });
+
+    if (state.kind !== 'ready') {
       return {
-        kind: 'cancelled' as const,
+        kind: state.kind,
       };
     }
-    const previousCompletedImportId = repository.latestImportId;
-    const previousCompletedImportJobId = repository.latestImportJobId;
 
-    const fileIdsByPath = new Map<string, string>();
-    for (const file of args.repoFiles) {
-      const fileId = await ctx.db.insert('repoFiles', {
-        repositoryId: args.repositoryId,
-        ownerTokenIdentifier: repository.ownerTokenIdentifier,
-        importId: args.importId,
-        ...file,
-      });
-      fileIdsByPath.set(file.path, fileId);
-    }
-
-    for (const chunk of args.repoChunks) {
-      const fileId = fileIdsByPath.get(chunk.path);
-      if (!fileId) {
-        continue;
-      }
-
-      await ctx.db.insert('repoChunks', {
-        repositoryId: args.repositoryId,
-        ownerTokenIdentifier: repository.ownerTokenIdentifier,
-        importId: args.importId,
-        fileId: fileId as never,
-        ...chunk,
-      });
-    }
-
-    for (const artifact of args.artifacts) {
-      await ctx.db.insert('analysisArtifacts', {
-        repositoryId: args.repositoryId,
-        jobId: args.jobId,
-        ownerTokenIdentifier: repository.ownerTokenIdentifier,
-        version: 1,
-        ...artifact,
-      });
-    }
+    const previousCompletedImportId = state.repository.latestImportId;
+    const previousCompletedImportJobId = state.repository.latestImportJobId;
 
     await applyImportCompletionState(ctx, {
       importId: args.importId,
-      repositoryId: args.repositoryId,
+      repositoryId: state.repository._id,
       jobId: args.jobId,
       sandboxId: args.sandboxId,
       commitSha: args.commitSha,
@@ -407,7 +636,7 @@ export const persistImportResults = internalMutation({
       summary: args.summary,
       readmeSummary: args.readmeSummary,
       architectureSummary: args.architectureSummary,
-      repositoryDefaultBranch: repository.defaultBranch,
+      repositoryDefaultBranch: state.repository.defaultBranch,
     });
 
     if (
@@ -476,7 +705,7 @@ export const markImportFailed = internalMutation({
   },
   handler: async (ctx, args) => {
     const importRecord = await ctx.db.get(args.importId);
-    if (!importRecord) {
+    if (!importRecord || importRecord.status === 'completed' || importRecord.status === 'cancelled') {
       return;
     }
 
@@ -516,8 +745,14 @@ export const markImportFailed = internalMutation({
         });
       }
     }
-    await ctx.db.patch(importRecord.repositoryId, {
-      importStatus: 'failed',
+    if (repository.importStatus !== 'completed') {
+      await ctx.db.patch(importRecord.repositoryId, {
+        importStatus: 'failed',
+      });
+    }
+    await ctx.scheduler.runAfter(0, internal.imports.cleanupSupersededImportSnapshot, {
+      importId: args.importId,
+      importJobId: args.jobId,
     });
   },
 });

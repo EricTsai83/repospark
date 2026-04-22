@@ -186,7 +186,8 @@ export default defineSchema({
   })
     .index('by_repositoryId', ['repositoryId'])
     .index('by_repositoryId_and_kind', ['repositoryId', 'kind'])
-    .index('by_jobId', ['jobId']),
+    .index('by_jobId', ['jobId'])
+    .index('by_jobId_and_kind', ['jobId', 'kind']),
 
   repoFiles: defineTable({
     repositoryId: v.id('repositories'),
@@ -205,7 +206,8 @@ export default defineSchema({
   })
     .index('by_repositoryId_and_path', ['repositoryId', 'path'])
     .index('by_repositoryId_and_parentPath', ['repositoryId', 'parentPath'])
-    .index('by_importId', ['importId']),
+    .index('by_importId', ['importId'])
+    .index('by_importId_and_path', ['importId', 'path']),
 
   repoChunks: defineTable({
     repositoryId: v.id('repositories'),

@@ -1,116 +1,180 @@
-# Plan 04 — persistImportResults 冪等性 + 分批化
+# Plan 04 — import persist 冪等化、分批化、延後 publish
 
 - **Priority**: P1
-- **Scope**: import pipeline 的後半段（持久化階段）。
+- **Scope**: import pipeline 的持久化與 completion publish 邏輯。
 - **Conflicts**:
   - `convex/imports.ts`：與 Plans 03 / 06 衝突。建議依順序 03 → 04 → 06。
   - `convex/importsNode.ts`：與 Plan 03 衝突。
-  - `convex/schema.ts`：可能加 index，會與 Plans 02 / 06 / 07 / 08 衝突。
-- **Dependencies**: 建議先做 Plan 03（DB-first sandbox reservation 提供更穩的前置狀態），但不強制。
+  - `convex/schema.ts`：新增 index 會與 Plans 02 / 06 / 07 / 08 衝突。
+- **Dependencies**: 建議先做 Plan 03，但不是硬性前置。
+
+## 結論
+
+原版方向是對的，但**不是最佳實踐**，因為它少了四個關鍵保護：
+
+1. `analysisArtifacts` 在 header retry 時仍可能重複寫入。
+2. 若在 header 就更新 repository 的 summary/readme/architecture，UI 會提早看到「尚未 publish 的新 snapshot」。
+3. 分批途中若 cancellation / failure，會留下半套 `repoFiles` / `repoChunks` / `analysisArtifacts`。
+4. 把整份 `fileIdsByPath` map 傳進每個 chunk batch，repo 放大後會讓 action-to-mutation payload 不必要地膨脹。
+
+因此修正版的核心不是只有「拆 batch」，而是要採用：
+
+- **idempotent upsert**
+- **staged writes**
+- **single finalize publish**
+- **failure cleanup**
 
 ## 背景
 
-`convex/imports.ts` 的 `persistImportResults` 目前在**單一 mutation** 內完成：
+原先的 `persistImportResults` 在單一 mutation 內同時做：
 
-- Insert 最多 400 個 `repoFiles`（`MAX_LISTED_FILES`）
-- Insert 最多 1600 個 `repoChunks`（`MAX_LISTED_FILES * MAX_CHUNKS_PER_FILE`）
-- Insert 3 個 `analysisArtifacts`
-- Patch `import` / `job` / `repository` / `sandbox`
+- insert `repoFiles`
+- insert `repoChunks`
+- insert `analysisArtifacts`
+- patch `imports` / `jobs` / `repositories` / `sandboxes`
 
-兩個問題：
+這會造成兩種問題：
 
-1. **不是冪等的**：若這個 mutation 被 retry（Convex action 在某些條件會 retry），會重複插入一整批資料，且沒有任何 dedupe key。
-2. **離上限不遠**：Convex 單一 mutation 有 byte / ops 上限。目前大型 repo 已接近邊界，未來加 embedding / 把 `MAX_LISTED_FILES` 拉高就會撞牆，而撞牆等於整輪 import 失敗、得重 clone。
+1. **retry 不安全**：同一個 import 若被 action retry，資料可能重複插入。
+2. **單 transaction 太大**：repo 變大時容易撞上 Convex mutation 的 read/write/byte 上限。
 
 ## 目標
 
-讓 persist 階段：
+讓 persist 階段具備以下特性：
 
-- 可安全 retry（冪等）
-- 可處理 10 倍大小 repo（分批寫入，單批小於單 mutation 軟上限）
-- 維持對 `deletionRequestedAt` 的尊重（任一批次發現 tombstone 就 cancel）
+- 可安全 retry
+- 單批 bounded，能支援更大的 repo
+- 只有在 finalize 時才切換可見 snapshot
+- 任一批次發現 tombstone 或終態，都能安全退出
+- 失敗/取消後不留下 partial snapshot
 
-## 做法
+## 修正版做法
 
-### A. 冪等性守門
+### A. 終態保護不只放在最後一個 mutation
 
-1. `persistImportResults` 最前面加：
+除了 persist mutations 本身要 guard，`getImportContext` 與 `markImportRunning` 也要尊重 import 終態：
+
+- 若 `imports.status === 'completed'`，直接 no-op
+- 若 `imports.status === 'failed' | 'cancelled'`，不得再把它打回 `running`
+- `markImportFailed` / cancellation flow 不得覆寫已完成 repository 的 `importStatus: 'completed'`
+
+這是為了防止 action retry 把已結束的 import 重新啟動。
+
+### B. 拆成四個 persistence steps
+
+#### 1. `persistImportHeader`
+
+- 只做小而穩定的 metadata 寫入：
+  - upsert import artifacts
+  - patch `imports.commitSha` / `imports.branch`
+  - patch `jobs.stage = 'persisting_files'`
+- **不更新 repository 可見欄位**
+
+`analysisArtifacts` 需用 `by_jobId_and_kind` 做 dedupe / upsert，否則 header retry 仍會重複寫入。
+
+#### 2. `persistRepoFilesBatch`
+
+- 每批最多 200 筆
+- 透過 `by_importId_and_path` 去重
+- 已存在則 skip
+
+#### 3. `persistRepoChunksBatch`
+
+- 每批最多 200 筆
+- 透過 `by_importId_and_path_and_chunkIndex` 去重
+- `fileId` 在 mutation 內用 `by_importId_and_path` 解析，不把完整 `fileIdsByPath` map 在 action 裡一路傳遞
+
+#### 4. `finalizeImportCompletion`
+
+只有這一步能做 publish：
+
+- `imports.status = completed`
+- `jobs.status = completed`
+- 更新 repository 的：
+  - `latestImportId`
+  - `latestImportJobId`
+  - summary/readme/architecture
+  - `detectedLanguages`
+  - `packageManagers`
+  - `entrypoints`
+  - `lastImportedAt`
+  - `lastIndexedAt`
+  - `lastSyncedCommitSha`
+- `sandboxes.status = ready`
+- 若有舊 completed import，排程 `cleanupSupersededImportSnapshot`
+
+### C. 失敗與取消都要清 partial snapshot
+
+這是原版 plan 最大的缺口。
+
+分批後，一旦其中某一批之前已經成功寫入，後續若 cancellation / failure：
+
+- `repoFiles`
+- `repoChunks`
+- `analysisArtifacts`
+
+都可能留下半套資料。
+
+因此：
+
+- `finalizeImportCancellation`
+- `markImportFailed`
+
+都必須排程 `cleanupSupersededImportSnapshot(importId, jobId)` 去清掉**當前 import 的 partial snapshot**。
+
+### D. Schema
+
+需要新增兩個 index：
 
 ```ts
-const importRecord = await ctx.db.get(args.importId);
-if (importRecord?.status === 'completed') {
-  return { kind: 'completed' as const };
-}
+analysisArtifacts
+  .index('by_jobId_and_kind', ['jobId', 'kind'])
+
+repoFiles
+  .index('by_importId_and_path', ['importId', 'path'])
 ```
 
-2. 對已 `completed` 的 repository，`markImportFailed` 不要覆寫 `importStatus: 'failed'`（目前會蓋掉）。
+`repoChunks.by_importId_and_path_and_chunkIndex` 已存在，可直接沿用。
 
-### B. 拆成三階段 mutation
+### E. `importsNode.runImportPipeline` 調整
 
-將現在的 `persistImportResults` 拆成：
-
-1. **`persistImportHeader`**（mutation）
-   - 參數：`importId`, `repositoryId`, `jobId`, `sandboxId`, `commitSha`, `branch`, `detectedLanguages`, `packageManagers`, `entrypoints`, `summary`, `readmeSummary`, `architectureSummary`, `artifacts`。
-   - 動作：
-     - 檢查 `deletionRequestedAt`，有則 `finalizeImportCancellation`。
-     - Insert 3 個 artifacts。
-     - Patch repository summary / readme / architecture / detectedLanguages / packageManagers / entrypoints。
-     - Patch import 的 `commitSha` / `branch` / `startedAt`（但**不要** mark completed）。
-     - Patch job 的 `stage: 'persisting_files'`、`progress: 0.5`。
-
-2. **`persistRepoFilesBatch`**（mutation）
-   - 參數：`importId`, `repositoryId`, `files: array<FileRecord>`（每批最多 200 筆）。
-   - 檢查 tombstone。
-   - Insert `repoFiles`（寫入前用 `by_importId_and_path` unique 先檢查，若已存在則 skip — dedupe 邏輯）。
-   - 回傳 `fileIdsByPath: Record<string, Id<'repoFiles'>>`。
-
-3. **`persistRepoChunksBatch`**（mutation）
-   - 參數：`importId`, `repositoryId`, `chunks: array<ChunkRecord>`（每批最多 200 筆），`fileIdsByPath`。
-   - 檢查 tombstone。
-   - 用 `by_importId_and_path_and_chunkIndex` 檢查去重。
-   - Insert `repoChunks`。
-
-4. **`finalizeImportCompletion`**（mutation）
-   - 參數：`importId`, `repositoryId`, `jobId`, `sandboxId`, `previousCompletedImportId`, `previousCompletedImportJobId`。
-   - 把原 `applyImportCompletionState` 的全部動作搬進來（mark completed、切 `latestImportId` 等 pointer、sandbox ready）。
-   - 排程 `cleanupSupersededImportSnapshot`（若需要）。
-
-### C. Schema
-
-`convex/schema.ts` `repoFiles` 加：
+生成 `fileRecords` / `chunkRecords` 後，改成：
 
 ```ts
-.index('by_importId_and_path', ['importId', 'path'])
-```
+persistImportHeader(...)
 
-`repoChunks` 的 `by_importId_and_path_and_chunkIndex` 已存在，可直接拿來 dedupe。
+for each batch of 200 files:
+  persistRepoFilesBatch(...)
 
-### D. `importsNode.runImportPipeline` 調整
-
-在生成 `fileRecords` / `chunkRecords` 之後：
-
-```
-persistImportHeader(...)                        // 一次
-for each batch of 200 files:                    // 迴圈
-  fileIdsByPath = persistRepoFilesBatch(...)
-  // 合併到 cumulative map
 for each batch of 200 chunks:
-  persistRepoChunksBatch(..., fileIdsByPath)
-finalizeImportCompletion(...)                   // 一次
+  persistRepoChunksBatch(...)
+
+finalizeImportCompletion(...)
 ```
 
-每個 mutation 之間檢查 `ctx.runQuery(internal.imports.getImportContext, ...)`，若變 cancelled 就 break out。
+這裡不再傳遞 cumulative `fileIdsByPath`，因為 chunk mutation 會自行查本批需要的 file rows。
+
+### F. Publish 規則
+
+新的 invariant：
+
+- `repoFiles` / `repoChunks` / import artifacts 可以先 staged
+- **repository 的可見 summary 與 latest pointers 只能在 finalize 更新**
+
+這樣 UI 與 downstream queries 永遠只會看到「上一個完整 snapshot」或「新的完整 snapshot」，不會看到中間態。
 
 ## 驗證
 
 - 單元測試：
-  - 連續呼叫兩次完整 persist 流程，最終 `repoFiles` / `repoChunks` / `artifacts` 數量不變。
-  - 對 800 files × 4 chunks = 3200 chunks 的假資料，pipeline 能成功完成（以前會在單 mutation 撞牆）。
-  - 中途把 repository 設 `deletionRequestedAt` 後繼續呼叫剩餘批次，能 early exit 並 mark cancelled。
-- 手動：`imports.test.ts` 擴充 case（可參考既有的 `imports.test.ts` 結構）。
+  - 完整 persist flow 連跑兩次，`repoFiles` / `repoChunks` / `analysisArtifacts` 數量不變
+  - partial persist 後再 tombstone，能 mark cancelled 並清掉 staged rows
+  - partial persist 後 `markImportFailed`，能保留上一個 completed snapshot，且清掉本次 partial rows
+- 手動：
+  - 用較大 repo 驗證多批次完成
+  - 驗證 repository detail / chat 只會讀到 finalized snapshot
 
 ## Out of Scope
 
-- 不改 snapshot 蒐集邏輯（`collectRepositorySnapshot` / `createRepoFileRecords` / `createChunkRecords` 保持不變）。
-- 不引入 embedding（那屬於 Plan 05 的長期項目）。
-- 不改 `cleanupSupersededImportSnapshot`（已經是 batch + self-reschedule 的模式，不動）。
+- 不改 snapshot 蒐集邏輯（`collectRepositorySnapshot` / `createRepoFileRecords` / `createChunkRecords` 保持不變）
+- 不引入 embedding（屬於 Plan 05）
+- 不改 `cleanupSupersededImportSnapshot` 的 batch/self-reschedule 模式，只重用它來清 partial snapshot
