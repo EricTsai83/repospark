@@ -19,6 +19,15 @@ export const MAX_CONTEXT_MESSAGES = 20;
 /** Maximum number of relevant code chunks selected for a chat reply. */
 export const MAX_RELEVANT_CHUNKS = 6;
 
+/** Baseline chunks kept even when search terms miss. */
+export const CHAT_BASELINE_CHUNKS = 30;
+
+/** Maximum search hits loaded from each chat retrieval index. */
+export const CHAT_SEARCH_RESULTS_PER_INDEX = 30;
+
+/** Upper bound for the query-aware chunk candidate pool. */
+export const CHAT_CANDIDATE_POOL_LIMIT = 90;
+
 /** Number of documents to delete per batch in cascade operations. */
 export const CASCADE_BATCH_SIZE = 200;
 

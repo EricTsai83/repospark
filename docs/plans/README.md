@@ -22,7 +22,8 @@
 | 6   | [01-docs-sync.md](./01-docs-sync.md)                                                         | P2       | 文件與程式碼同步               | `docs/*.md`（不碰 code）                                                                                                                                                        |
 | 7   | [07-streaming-reply-optimization.md](./07-streaming-reply-optimization.md)                   | P2       | 串流寫入 / 推送優化            | `convex/chat.ts`, `convex/lib/constants.ts`（可選 schema）                                                                                                                      |
 | 8   | [05-chat-context-retrieval.md](./05-chat-context-retrieval.md)                               | P2       | Chat 回答品質              | `convex/chat.ts`, `convex/chat-context.test.ts`                                                                                                                             |
-| 9   | [08-misc-deepmode-installations-cost.md](./08-misc-deepmode-installations-cost.md)           | P3       | 三項小改善合併                | `convex/{analysis,analysisNode,github,chat}.ts`, `convex/lib/openaiPricing.ts`（新）                                                                                           |
+| 9   | [10-lawn-style-vercel-convex-deployment.md](./10-lawn-style-vercel-convex-deployment.md)    | P2       | 採用 `lawn` 式 Vercel + Convex 部署 | `package.json`, `vercel.json`（新）, `.env.example`, `README.md`, `docs/integrations-and-operations.md`                                                                       |
+| 10  | [08-misc-deepmode-installations-cost.md](./08-misc-deepmode-installations-cost.md)           | P3       | 三項小改善合併                | `convex/{analysis,analysisNode,github,chat}.ts`, `convex/lib/openaiPricing.ts`（新）                                                                                           |
 
 
 ## 衝突提示（會互相踩到的檔案）

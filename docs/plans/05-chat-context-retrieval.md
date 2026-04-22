@@ -50,44 +50,64 @@ if (chunk.path.toLowerCase().includes(token) ||
 
 ### 1. 候選池策略
 
-`getReplyContext` 的 chunk 查詢改成「query-aware 候選池」：
+`getReplyContext` 改成「latest snapshot 內的 query-aware candidate pool」：
 
-- Tokenize 問題（沿用 `selectRelevantChunks` 的切詞邏輯，但 token 取前 8 個）。
-- 對每個 token 執行兩種 index 查詢（limit 小一點，例如每 token 20）：
-  - `by_repositoryId_and_path`：`q.eq('repositoryId', ...).gte('path', token).lt('path', token + '\uffff')`（前綴式探路），抓 path 含 token 的 chunk。
-  - `by_repositoryId_and_symbolName`：`q.eq('repositoryId', ...).eq('symbolName', token)`，抓 symbol 命中的 chunk。
-- 再額外拿一組「預設 baseline」chunks（`by_importId_and_path_and_chunkIndex` take 40）保證即使 token 都 miss 也還有 context。
-- 以 `_id` 去重合併，最終候選池上限例如 120 個。
-
-或更務實的做法（若 index 改動太大）：
-
-- 保持 `take(80)` 當 baseline，但**額外**呼叫一次 `by_repositoryId_and_path` 的前綴查詢（針對問題中像路徑的 token，例如含 `/`、`.ts`、`.py`）再 merge。
+- 先載入最近訊息，取最新一則 user message 當查詢來源。
+- 將問題 tokenize，取前 8 個有效 token，組成 Convex text search query。
+- 在 `repoChunks` 上新增兩個 `searchIndex`，都用 `importId` 當 filter field：
+  - `search_summary`
+  - `search_content`
+- 查詢時固定 `eq('importId', repository.latestImportId)`，確保只會命中目前發佈中的 import snapshot，不會把舊 snapshot 混回來。
+- baseline 不再只拿前 N 個 chunk，而是：
+  - `by_importId_and_path_and_chunkIndex` 取前半段
+  - 同一個 index `order('desc')` 取後半段
+  - 這樣即使 search miss，也不會永遠只看到 path 排序最前面的檔案
+- 合併 `summary search hits + content search hits + baseline`，用 `_id` 去重，最後截成固定上限 candidate pool。
 
 ### 2. 打分
 
-`selectRelevantChunks`：
+`selectRelevantChunks` 保留輕量 heuristic，但改成對 candidate pool 做 weighted rerank：
 
-- 加上 `chunk.content` 的 substring 命中（每個 token hit +1）。
-- path hit 權重 2，symbol/summary hit 權重 1.5，content hit 權重 1（避免長 content 壓過精準 path）。
-- 維持 `MAX_RELEVANT_CHUNKS` 截斷。
+- `path` 命中: `+3`
+- `summary` 命中: `+2`
+- `content` 命中: `+1`
+- token 為空時直接回傳前 `MAX_RELEVANT_CHUNKS`
+- 若分數相同，保留 candidate pool 原本的順序當作 tie-break，避免同分 chunk 被 rerank 階段重新洗牌，同時維持可重現的結果
+
+這樣做的原因是：
+
+- path / summary 命中通常更精準，應優先於長段 content 的偶發字串命中
+- content 仍然能把原本完全進不了候選池的 chunk 拉進來
 
 ### 3. Constants
 
-`convex/lib/constants.ts` 新增（若 baseline 策略要調）：
+`convex/lib/constants.ts` 新增：
 
 ```ts
-export const CHAT_CANDIDATE_POOL_LIMIT = 120;
-export const CHAT_BASELINE_CHUNKS = 40;
+export const CHAT_BASELINE_CHUNKS = 30;
+export const CHAT_SEARCH_RESULTS_PER_INDEX = 30;
+export const CHAT_CANDIDATE_POOL_LIMIT = 90;
 ```
 
-若不改 baseline 策略則不需要。
+### 4. 為什麼不採用原本的 `repositoryId` 級查詢
+
+原版 plan 提到的 `by_repositoryId_and_path` / `by_repositoryId_and_symbolName` 有兩個問題：
+
+1. 它們不是 latest snapshot 邊界，容易把歷史 import 的 chunk 混回 candidate pool。
+2. 目前 `symbolName` 在現行 chunk 產生流程裡幾乎沒有被填值，短期收益很低。
+
+因此短期最佳實踐不是做 repository-wide prefix probing，而是：
+
+- 先守住 `latestImportId` 的一致性
+- 再用 search index 讓候選池對問題有反應
+- embedding / richer semantic retrieval 留到後續 plan
 
 ## 驗證
 
 - 擴充 `convex/chat-context.test.ts`：
-  - 200 chunks 的 fixture，chunks[180].path 含 `auth`，問題 `"How does auth work?"` 應該 selectRelevantChunks 結果包含 chunks[180]（以前不會，因為它在前 80 之外）。
+  - 200 chunks 的 fixture，`src/file-180-auth.ts` 不在 baseline head/tail 範圍內，但問題 `"How does auth work?"` 仍會把它帶進 `getReplyContext().chunks`。
   - 問題 token 都 miss 時仍會回 baseline 結果而非空陣列。
-  - content 命中能影響排序（path 完全不含 token、但 content 多次命中 的 chunk 會排進前 `MAX_RELEVANT_CHUNKS`）。
+  - `content` 命中能影響排序，即使 path / summary 都不含 token，仍能排進前 `MAX_RELEVANT_CHUNKS`。
 
 ## Out of Scope
 

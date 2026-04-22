@@ -51,6 +51,8 @@ flowchart TD
   H --> F --> C --> P
 ```
 
+
+
 ### 1. Header persistence
 
 The first step writes only small, import-scoped metadata:
