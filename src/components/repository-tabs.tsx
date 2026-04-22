@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChatPanel } from '@/components/chat-panel';
 import { JobRow } from '@/components/job-row';
-import type { ChatMode, DeepModeStatus, ThreadId } from '@/lib/types';
+import type { ActiveMessageStream, ChatMode, DeepModeStatus, ThreadId } from '@/lib/types';
 
 export function RepositoryTabs({
   activeTab,
@@ -14,6 +14,7 @@ export function RepositoryTabs({
   artifacts,
   selectedThreadId,
   messages,
+  activeMessageStream,
   isChatLoading,
   chatInput,
   setChatInput,
@@ -32,6 +33,7 @@ export function RepositoryTabs({
   artifacts: Doc<'analysisArtifacts'>[] | undefined;
   selectedThreadId: ThreadId | null;
   messages: Doc<'messages'>[] | undefined;
+  activeMessageStream: ActiveMessageStream | null | undefined;
   isChatLoading: boolean;
   chatInput: string;
   setChatInput: (value: string) => void;
@@ -56,6 +58,7 @@ export function RepositoryTabs({
         <ChatPanel
           selectedThreadId={selectedThreadId}
           messages={messages}
+          activeMessageStream={activeMessageStream}
           isChatLoading={isChatLoading}
           chatInput={chatInput}
           setChatInput={setChatInput}

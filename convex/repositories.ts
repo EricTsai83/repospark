@@ -15,6 +15,7 @@ import {
 
 const FILE_COUNT_DISPLAY_LIMIT = 400;
 const REPOSITORY_DELETE_RETRY_MS = 5_000;
+const STREAM_CHUNK_DRAIN_PASS_LIMIT = 8;
 
 function isRepositoryDeleting(repository: { deletionRequestedAt?: number } | null | undefined) {
   return typeof repository?.deletionRequestedAt === 'number';
@@ -427,20 +428,53 @@ export const cascadeDeleteRepository = internalMutation({
     const threads = await ctx.db
       .query('threads')
       .withIndex('by_repositoryId_and_lastMessageAt', (q) => q.eq('repositoryId', args.repositoryId))
-      .take(50);
+      .take(CASCADE_BATCH_SIZE);
     for (const thread of threads) {
       const msgs = await ctx.db
         .query('messages')
         .withIndex('by_threadId', (q) => q.eq('threadId', thread._id))
         .take(CASCADE_BATCH_SIZE);
       for (const msg of msgs) await ctx.db.delete(msg._id);
-      if (msgs.length < CASCADE_BATCH_SIZE) {
+
+      const streams = await ctx.db
+        .query('messageStreams')
+        .withIndex('by_threadId', (q) => q.eq('threadId', thread._id))
+        .take(CASCADE_BATCH_SIZE);
+      let streamChunksDrained = true;
+      for (const stream of streams) {
+        let streamChunksFullyDrained = false;
+        for (let pass = 0; pass < STREAM_CHUNK_DRAIN_PASS_LIMIT; pass += 1) {
+          const streamChunks = await ctx.db
+            .query('messageStreamChunks')
+            .withIndex('by_streamId_and_sequence', (q) => q.eq('streamId', stream._id))
+            .take(CASCADE_BATCH_SIZE);
+          for (const chunk of streamChunks) {
+            await ctx.db.delete(chunk._id);
+          }
+          if (streamChunks.length < CASCADE_BATCH_SIZE) {
+            streamChunksFullyDrained = true;
+            break;
+          }
+        }
+        if (streamChunksFullyDrained) {
+          await ctx.db.delete(stream._id);
+        } else {
+          streamChunksDrained = false;
+          more = true;
+        }
+      }
+
+      if (streams.length === CASCADE_BATCH_SIZE) {
+        more = true;
+      }
+
+      if (msgs.length < CASCADE_BATCH_SIZE && streams.length < CASCADE_BATCH_SIZE && streamChunksDrained) {
         await ctx.db.delete(thread._id);
       } else {
         more = true;
       }
     }
-    if (threads.length === 50) more = true;
+    if (threads.length === CASCADE_BATCH_SIZE) more = true;
 
     // Drain remaining tables, but keep cleanup jobs until sandbox deletion has finished.
     more = await drainTable(ctx.db, 'analysisArtifacts', 'by_repositoryId', 'repositoryId', args.repositoryId, CASCADE_BATCH_SIZE) || more;

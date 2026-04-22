@@ -17,7 +17,7 @@ Both are repository-centered, but they depend on different data sources and exec
 | Main entry point         | `chat.sendMessage`                                   | `analysis.requestDeepAnalysis`              |
 | Primary data source      | `analysisArtifacts` + `repoChunks` + recent messages | live sandbox                                |
 | Execution location       | Convex action                                        | Convex Node action + Daytona                |
-| UI presentation          | streaming updates to thread messages                 | a new deep-analysis artifact plus job state |
+| UI presentation          | stable history + active stream merge                 | a new deep-analysis artifact plus job state |
 | Availability requirement | repository has completed import                      | repository has a usable sandbox             |
 
 
@@ -32,8 +32,9 @@ flowchart TD
   LoadContext[LoadReplyContext]
   SelectChunks[SelectRelevantChunks]
   Generate[GenerateReply]
-  Stream[AppendAssistantDelta]
-  Complete[CompleteAssistantReply]
+  Stream[AppendAssistantStreamChunk]
+  Compact[CompactActiveStreamTail]
+  Complete[finalizeAssistantReply]
 
   UserQuestion --> CreateJob
   CreateJob --> InsertMessages
@@ -42,7 +43,8 @@ flowchart TD
   LoadContext --> SelectChunks
   SelectChunks --> Generate
   Generate --> Stream
-  Stream --> Complete
+  Stream --> Compact
+  Compact --> Complete
 ```
 
 
@@ -118,19 +120,21 @@ If `OPENAI_API_KEY` exists, the system:
 
 If `OPENAI_API_KEY` is absent, the system falls back to a heuristic answer so it can still produce a response based on indexed data.
 
-### 6. Stream and complete
+### 6. Stream, compact, and complete
 
-The answer is not written all at once after generation finishes. Instead:
+The answer is no longer streamed directly into `messages.content`. Instead:
 
-1. model output is accumulated
-2. a delta is appended whenever content grows past `STREAM_FLUSH_THRESHOLD`
-3. the final remaining content is written and the reply is marked completed
+1. model output is accumulated in memory
+2. a flushed delta is appended to `messageStreamChunks`
+3. older tail chunks are periodically compacted into `messageStreams.compactedContent`
+4. only the final durable write patches `messages.content`
 
 When the flow completes, it updates:
 
 - the assistant message `status = completed`
 - `thread.lastAssistantMessageAt`
 - the job `status = completed`
+- and deletes the active stream state
 
 If an error occurs midstream, both the assistant message and the job are marked failed.
 

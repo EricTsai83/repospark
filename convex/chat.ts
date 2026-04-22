@@ -7,9 +7,11 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import { mutation, query, internalAction, internalMutation, internalQuery } from './_generated/server';
 import { requireViewerIdentity } from './lib/auth';
 import {
+  CASCADE_BATCH_SIZE,
   CHAT_BASELINE_CHUNKS,
   CHAT_CANDIDATE_POOL_LIMIT,
   CHAT_SEARCH_RESULTS_PER_INDEX,
+  MESSAGE_STREAM_COMPACT_CHUNK_THRESHOLD,
   MAX_CONTEXT_ARTIFACTS,
   MAX_CONTEXT_MESSAGES,
   MAX_VISIBLE_MESSAGES,
@@ -24,6 +26,7 @@ import {
   isLeaseActive,
   throwOperationAlreadyInProgress,
 } from './lib/rateLimit';
+import { logWarn } from './lib/observability';
 
 type ReplyContext = {
   ownerTokenIdentifier: string;
@@ -35,6 +38,8 @@ type ReplyContext = {
   chunks: Array<{ path: string; summary: string; content: string }>;
   messages: Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: string }>;
 };
+
+type DbCtx = Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>;
 
 const STALE_CHAT_JOB_ERROR_MESSAGE =
   'The assistant reply stalled and was automatically marked as failed.';
@@ -56,6 +61,128 @@ async function getActiveChatJobForThread(
       (job.status === 'queued' || job.status === 'running') &&
       isLeaseActive(job.leaseExpiresAt, now),
   );
+}
+
+async function getMessageStreamByThread(ctx: DbCtx, threadId: Id<'threads'>) {
+  const streams = await ctx.db
+    .query('messageStreams')
+    .withIndex('by_threadId', (q) => q.eq('threadId', threadId))
+    .order('desc')
+    .take(5);
+
+  return streams[0] ?? null;
+}
+
+async function getMessageStreamByAssistantMessageId(ctx: DbCtx, assistantMessageId: Id<'messages'>) {
+  return await ctx.db
+    .query('messageStreams')
+    .withIndex('by_assistantMessageId', (q) => q.eq('assistantMessageId', assistantMessageId))
+    .unique();
+}
+
+async function getMessageStreamByJobId(ctx: DbCtx, jobId: Id<'jobs'>) {
+  return await ctx.db
+    .query('messageStreams')
+    .withIndex('by_jobId', (q) => q.eq('jobId', jobId))
+    .unique();
+}
+
+async function loadStreamTailChunks(
+  ctx: DbCtx,
+  stream: Doc<'messageStreams'>,
+  limit: number = MESSAGE_STREAM_COMPACT_CHUNK_THRESHOLD,
+) {
+  return await ctx.db
+    .query('messageStreamChunks')
+    .withIndex('by_streamId_and_sequence', (q) =>
+      q.eq('streamId', stream._id).gt('sequence', stream.compactedThroughSequence),
+    )
+    .take(limit);
+}
+
+async function loadMessageStreamSnapshot(ctx: DbCtx, assistantMessageId: Id<'messages'>) {
+  const stream = await getMessageStreamByAssistantMessageId(ctx, assistantMessageId);
+  if (!stream) {
+    return null;
+  }
+
+  const tailChunks = await loadAllStreamTailChunks(ctx, stream);
+
+  return {
+    stream,
+    tailChunks,
+    content: `${stream.compactedContent}${tailChunks.map((chunk) => chunk.text).join('')}`,
+  };
+}
+
+async function loadAllStreamTailChunks(ctx: DbCtx, stream: Doc<'messageStreams'>) {
+  const tailChunks: Doc<'messageStreamChunks'>[] = [];
+  let cursor = stream.compactedThroughSequence;
+  while (true) {
+    const batch = await ctx.db
+      .query('messageStreamChunks')
+      .withIndex('by_streamId_and_sequence', (q) => q.eq('streamId', stream._id).gt('sequence', cursor))
+      .take(CASCADE_BATCH_SIZE);
+    if (batch.length === 0) {
+      break;
+    }
+    tailChunks.push(...batch);
+    cursor = batch[batch.length - 1]!.sequence;
+    if (batch.length < CASCADE_BATCH_SIZE) {
+      break;
+    }
+  }
+
+  return tailChunks;
+}
+
+async function compactMessageStreamTail(ctx: MutationCtx, streamId: Id<'messageStreams'>) {
+  const stream = await ctx.db.get(streamId);
+  if (!stream) {
+    return;
+  }
+
+  const pendingChunkCount = stream.nextSequence - (stream.compactedThroughSequence + 1);
+  if (pendingChunkCount < MESSAGE_STREAM_COMPACT_CHUNK_THRESHOLD) {
+    return;
+  }
+
+  const tailChunks = await loadStreamTailChunks(ctx, stream);
+  if (tailChunks.length < MESSAGE_STREAM_COMPACT_CHUNK_THRESHOLD) {
+    return;
+  }
+
+  const lastSequence = tailChunks[tailChunks.length - 1]?.sequence;
+  if (typeof lastSequence !== 'number') {
+    return;
+  }
+
+  await ctx.db.patch(streamId, {
+    compactedContent: `${stream.compactedContent}${tailChunks.map((chunk) => chunk.text).join('')}`,
+    compactedThroughSequence: lastSequence,
+    lastAppendedAt: Date.now(),
+  });
+
+  for (const chunk of tailChunks) {
+    await ctx.db.delete(chunk._id);
+  }
+}
+
+async function deleteMessageStreamState(ctx: MutationCtx, streamId: Id<'messageStreams'>) {
+  while (true) {
+    const chunks = await ctx.db
+      .query('messageStreamChunks')
+      .withIndex('by_streamId_and_sequence', (q) => q.eq('streamId', streamId))
+      .take(CASCADE_BATCH_SIZE);
+    for (const chunk of chunks) {
+      await ctx.db.delete(chunk._id);
+    }
+    if (chunks.length < CASCADE_BATCH_SIZE) {
+      break;
+    }
+  }
+
+  await ctx.db.delete(streamId);
 }
 
 export const listThreads = query({
@@ -94,6 +221,43 @@ export const listMessages = query({
     }
 
     return await loadRecentMessages(ctx, args.threadId, MAX_VISIBLE_MESSAGES);
+  },
+});
+
+export const getActiveMessageStream = query({
+  args: {
+    threadId: v.id('threads'),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireViewerIdentity(ctx);
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread) {
+      throw new Error('Thread not found.');
+    }
+
+    const repository = await ctx.db.get(thread.repositoryId);
+    if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+      throw new Error('Thread not found.');
+    }
+
+    const stream = await getMessageStreamByThread(ctx, args.threadId);
+    if (!stream) {
+      return null;
+    }
+
+    const assistantMessage = await ctx.db.get(stream.assistantMessageId);
+    if (!assistantMessage || assistantMessage.status !== 'streaming') {
+      return null;
+    }
+
+    const tailChunks = await loadAllStreamTailChunks(ctx, stream);
+
+    return {
+      assistantMessageId: stream.assistantMessageId,
+      content: `${stream.compactedContent}${tailChunks.map((chunk) => chunk.text).join('')}`,
+      startedAt: stream.startedAt,
+      lastAppendedAt: stream.lastAppendedAt,
+    };
   },
 });
 
@@ -140,6 +304,14 @@ export const deleteThread = mutation({
       await ctx.db.delete(message._id);
     }
 
+    const streams = await ctx.db
+      .query('messageStreams')
+      .withIndex('by_threadId', (q) => q.eq('threadId', args.threadId))
+      .take(500);
+    for (const stream of streams) {
+      await deleteMessageStreamState(ctx, stream._id);
+    }
+
     // Clear defaultThreadId reference on the repository if needed
     const repository = await ctx.db.get(thread.repositoryId);
     if (repository && repository.defaultThreadId === args.threadId) {
@@ -152,6 +324,11 @@ export const deleteThread = mutation({
     // If there might be more messages, schedule continuation cleanup
     if (messages.length === 500) {
       await ctx.scheduler.runAfter(0, internal.chat.cleanupOrphanedMessages, {
+        threadId: args.threadId,
+      });
+    }
+    if (streams.length === 500) {
+      await ctx.scheduler.runAfter(0, internal.chat.cleanupOrphanedMessageStreams, {
         threadId: args.threadId,
       });
     }
@@ -172,6 +349,26 @@ export const cleanupOrphanedMessages = internalMutation({
     }
     if (messages.length === 500) {
       await ctx.scheduler.runAfter(0, internal.chat.cleanupOrphanedMessages, {
+        threadId: args.threadId,
+      });
+    }
+  },
+});
+
+export const cleanupOrphanedMessageStreams = internalMutation({
+  args: {
+    threadId: v.id('threads'),
+  },
+  handler: async (ctx, args) => {
+    const streams = await ctx.db
+      .query('messageStreams')
+      .withIndex('by_threadId', (q) => q.eq('threadId', args.threadId))
+      .take(500);
+    for (const stream of streams) {
+      await deleteMessageStreamState(ctx, stream._id);
+    }
+    if (streams.length === 500) {
+      await ctx.scheduler.runAfter(0, internal.chat.cleanupOrphanedMessageStreams, {
         threadId: args.threadId,
       });
     }
@@ -248,6 +445,19 @@ export const sendMessage = mutation({
       content: '',
     });
 
+    await ctx.db.insert('messageStreams', {
+      repositoryId: thread.repositoryId,
+      threadId: args.threadId,
+      jobId,
+      assistantMessageId,
+      ownerTokenIdentifier: identity.tokenIdentifier,
+      compactedContent: '',
+      compactedThroughSequence: -1,
+      nextSequence: 0,
+      startedAt: now,
+      lastAppendedAt: now,
+    });
+
     await ctx.db.patch(args.threadId, {
       mode,
       lastMessageAt: now,
@@ -297,7 +507,9 @@ export const getReplyContext = internalQuery({
       .order('desc')
       .take(10);
     const artifacts = [...importArtifacts, ...deepAnalysisArtifacts];
-    const messages = await loadRecentMessages(ctx, args.threadId, MAX_CONTEXT_MESSAGES);
+    const messages = (await loadRecentMessages(ctx, args.threadId, MAX_CONTEXT_MESSAGES + 1))
+      .filter((message) => message.content.trim().length > 0)
+      .slice(-MAX_CONTEXT_MESSAGES);
     const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user');
     const chunks = repository.latestImportId
       ? await loadCandidateChunks(ctx, repository.latestImportId, latestUserMessage?.content ?? '')
@@ -340,6 +552,9 @@ export const generateAssistantReply = internalAction({
       jobId: args.jobId,
     });
 
+    // Anything still buffered in pendingDelta below STREAM_FLUSH_THRESHOLD can be lost on a crash; recoverStaleChatJob only sees persisted messageStreamChunks flushed via appendAssistantStreamChunk before compactMessageStreamTail/finalizeAssistantReply/failAssistantReply run.
+    let pendingDelta = '';
+
     try {
       // Cast required: ctx.runAction/runQuery cannot infer return types for
       // functions in the same file due to Convex TypeScript circularity limits.
@@ -353,11 +568,11 @@ export const generateAssistantReply = internalAction({
 
       if (!process.env.OPENAI_API_KEY) {
         const heuristicAnswer = buildHeuristicAnswer(replyContext, userPrompt, relevantChunks);
-        await ctx.runMutation(internal.chat.completeAssistantReply, {
+        await ctx.runMutation(internal.chat.finalizeAssistantReply, {
           threadId: args.threadId,
           assistantMessageId: args.assistantMessageId,
           jobId: args.jobId,
-          content: heuristicAnswer,
+          finalDelta: heuristicAnswer,
         });
         return;
       }
@@ -368,32 +583,29 @@ export const generateAssistantReply = internalAction({
         prompt: buildUserPrompt(replyContext, userPrompt, relevantChunks),
       });
 
-      let content = '';
-      let lastFlushedLength = 0;
       for await (const delta of response.textStream) {
-        content += delta;
-        if (content.length - lastFlushedLength >= STREAM_FLUSH_THRESHOLD) {
-          const nextDelta = content.slice(lastFlushedLength);
-          lastFlushedLength = content.length;
-          await ctx.runMutation(internal.chat.appendAssistantDelta, {
+        pendingDelta += delta;
+        if (pendingDelta.length >= STREAM_FLUSH_THRESHOLD) {
+          await ctx.runMutation(internal.chat.appendAssistantStreamChunk, {
             assistantMessageId: args.assistantMessageId,
-            delta: nextDelta,
+            delta: pendingDelta,
           });
+          pendingDelta = '';
         }
       }
 
-      const remainingDelta = content.slice(lastFlushedLength);
-      await ctx.runMutation(internal.chat.completeAssistantReply, {
+      await ctx.runMutation(internal.chat.finalizeAssistantReply, {
         threadId: args.threadId,
         assistantMessageId: args.assistantMessageId,
         jobId: args.jobId,
-        content: remainingDelta,
+        finalDelta: pendingDelta,
       });
     } catch (error) {
       await ctx.runMutation(internal.chat.failAssistantReply, {
         assistantMessageId: args.assistantMessageId,
         jobId: args.jobId,
         errorMessage: error instanceof Error ? error.message : 'Unknown assistant error',
+        finalDelta: pendingDelta,
       });
     }
   },
@@ -419,30 +631,48 @@ export const markAssistantReplyRunning = internalMutation({
   },
 });
 
-export const appendAssistantDelta = internalMutation({
+export const appendAssistantStreamChunk = internalMutation({
   args: {
     assistantMessageId: v.id('messages'),
     delta: v.string(),
   },
   handler: async (ctx, args) => {
-    const message = await ctx.db.get(args.assistantMessageId);
-    if (!message) {
+    if (!args.delta) {
       return;
     }
 
-    await ctx.db.patch(args.assistantMessageId, {
-      content: `${message.content}${args.delta}`,
-      status: 'streaming',
+    const stream = await getMessageStreamByAssistantMessageId(ctx, args.assistantMessageId);
+    if (!stream) {
+      logWarn('chat', 'assistant_stream_missing_for_chunk_append', {
+        assistantMessageId: args.assistantMessageId,
+        deltaLength: args.delta.length,
+        hint: 'messageStreamChunks append skipped before compactMessageStreamTail',
+      });
+      throw new Error(
+        'Missing message stream while appending assistant delta: messageStreamChunks append aborted before compactMessageStreamTail.',
+      );
+    }
+
+    await ctx.db.insert('messageStreamChunks', {
+      streamId: stream._id,
+      sequence: stream.nextSequence,
+      text: args.delta,
     });
+    await ctx.db.patch(stream._id, {
+      nextSequence: stream.nextSequence + 1,
+      lastAppendedAt: Date.now(),
+    });
+
+    await compactMessageStreamTail(ctx, stream._id);
   },
 });
 
-export const completeAssistantReply = internalMutation({
+export const finalizeAssistantReply = internalMutation({
   args: {
     threadId: v.id('threads'),
     assistantMessageId: v.id('messages'),
     jobId: v.id('jobs'),
-    content: v.string(),
+    finalDelta: v.string(),
   },
   handler: async (ctx, args) => {
     const message = await ctx.db.get(args.assistantMessageId);
@@ -450,10 +680,13 @@ export const completeAssistantReply = internalMutation({
       return;
     }
 
+    const streamSnapshot = await loadMessageStreamSnapshot(ctx, args.assistantMessageId);
     const now = Date.now();
+    const finalContent = `${streamSnapshot?.content ?? message.content}${args.finalDelta}`;
     await ctx.db.patch(args.assistantMessageId, {
-      content: `${message.content}${args.content}`,
+      content: finalContent,
       status: 'completed',
+      errorMessage: undefined,
     });
     await ctx.db.patch(args.threadId, {
       lastAssistantMessageAt: now,
@@ -467,6 +700,10 @@ export const completeAssistantReply = internalMutation({
       outputSummary: 'Assistant reply generated.',
       leaseExpiresAt: undefined,
     });
+
+    if (streamSnapshot) {
+      await deleteMessageStreamState(ctx, streamSnapshot.stream._id);
+    }
   },
 });
 
@@ -475,13 +712,24 @@ export const failAssistantReply = internalMutation({
     assistantMessageId: v.id('messages'),
     jobId: v.id('jobs'),
     errorMessage: v.string(),
+    finalDelta: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    const streamSnapshot = await loadMessageStreamSnapshot(ctx, args.assistantMessageId);
+    const message = await ctx.db.get(args.assistantMessageId);
+    if (!message) {
+      if (streamSnapshot) {
+        await deleteMessageStreamState(ctx, streamSnapshot.stream._id);
+      }
+      return;
+    }
+
+    const streamedContent = `${streamSnapshot?.content ?? message.content}${args.finalDelta ?? ''}`;
     await ctx.db.patch(args.assistantMessageId, {
       status: 'failed',
       errorMessage: args.errorMessage,
-      content: args.errorMessage,
+      content: streamedContent || args.errorMessage,
     });
     await ctx.db.patch(args.jobId, {
       status: 'failed',
@@ -491,6 +739,10 @@ export const failAssistantReply = internalMutation({
       errorMessage: args.errorMessage,
       leaseExpiresAt: undefined,
     });
+
+    if (streamSnapshot) {
+      await deleteMessageStreamState(ctx, streamSnapshot.stream._id);
+    }
   },
 });
 
@@ -518,12 +770,17 @@ export const recoverStaleChatJob = internalMutation({
       .withIndex('by_jobId', (q) => q.eq('jobId', args.jobId))
       .take(10);
     const assistantMessage = jobMessages.find((entry) => entry.role === 'assistant');
+    const stream = await getMessageStreamByJobId(ctx, args.jobId);
+    const streamSnapshot =
+      assistantMessage && stream
+        ? await loadMessageStreamSnapshot(ctx, assistantMessage._id)
+        : null;
 
     if (assistantMessage) {
       await ctx.db.patch(assistantMessage._id, {
         status: 'failed',
         errorMessage: message,
-        content: message,
+        content: streamSnapshot?.content || message,
       });
     }
 
@@ -535,6 +792,10 @@ export const recoverStaleChatJob = internalMutation({
       errorMessage: message,
       leaseExpiresAt: undefined,
     });
+
+    if (stream) {
+      await deleteMessageStreamState(ctx, stream._id);
+    }
   },
 });
 

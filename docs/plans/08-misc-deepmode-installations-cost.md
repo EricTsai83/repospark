@@ -128,13 +128,13 @@ export function estimateCostUsd(
 2. `convex/chat.ts` `generateAssistantReply` 串流結束後取 usage：
 
 - `ai` 套件的 `streamText` 完成後 `await response.usage` 可拿 `{ promptTokens, completionTokens, totalTokens }`。
-- 將 `promptTokens` / `completionTokens` / `estimateCostUsd(...)` 傳入新的 `completeAssistantReply` 參數。
+- 將 `promptTokens` / `completionTokens` / `estimateCostUsd(...)` 傳入新的 `finalizeAssistantReply` 參數。
 
-3. 延伸 `completeAssistantReply` 的參數與寫入：
+3. 延伸 `finalizeAssistantReply` 的參數與寫入：
 
 ```ts
 await ctx.db.patch(args.assistantMessageId, {
-  content: `${message.content}${args.content}`,
+  content: finalContent,
   status: 'completed',
   estimatedInputTokens: args.inputTokens,
   estimatedOutputTokens: args.outputTokens,

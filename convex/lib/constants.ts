@@ -34,6 +34,9 @@ export const CASCADE_BATCH_SIZE = 200;
 /** Minimum character delta before flushing a streaming assistant reply. */
 export const STREAM_FLUSH_THRESHOLD = 240;
 
+/** Number of stream chunks to compact into the stream header. */
+export const MESSAGE_STREAM_COMPACT_CHUNK_THRESHOLD = 8;
+
 /** Default minutes before a sandbox auto-stops (Daytona). */
 export const DEFAULT_AUTO_STOP_MINUTES = 10;
 

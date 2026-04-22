@@ -1,103 +1,193 @@
-# Plan 07 — Streaming Assistant Reply 寫入優化
+# Plan 07 - Long-Term Chat Streaming Architecture
 
 - **Priority**: P2
-- **Scope**: `chat.ts` 的串流寫入路徑。
+- **Scope**: `convex/schema.ts`, `convex/chat.ts`, `convex/repositories.ts`, `src/components/{repository-shell,repository-tabs,chat-panel}.tsx`, chat tests, and streaming docs.
 - **Conflicts**:
-  - `convex/chat.ts`：與 Plans 02 / 05 / 08 衝突。
-  - `convex/schema.ts`（若採選項 B）：與 Plans 02 / 04 / 06 / 08 衝突。
-  - `src/components/chat-panel.tsx`（若採選項 B）：單獨修改，無衝突。
-- **Dependencies**: 無。
+  - `convex/chat.ts`: conflicts with Plans 02 / 05 / 08.
+  - `convex/schema.ts`: conflicts with Plans 02 / 04 / 06 / 08.
+  - `convex/repositories.ts`: overlaps any repository-delete work.
+  - `src/components/repository-shell.tsx`: overlaps chat UI orchestration work.
+- **Dependencies**: none.
 
-## 背景
+## Background
 
-`convex/chat.ts` 的 `appendAssistantDelta`：
+The old streaming path treated one `messages` row as both:
+
+1. the durable chat-history record
+2. the hot, high-frequency transport surface for every streamed delta
+
+That forced the system to rewrite `messages.content` on every flush:
 
 ```ts
-const message = await ctx.db.get(args.assistantMessageId);
-if (!message) return;
 await ctx.db.patch(args.assistantMessageId, {
   content: `${message.content}${args.delta}`,
   status: 'streaming',
 });
 ```
 
-- 每次 flush：`get` → concat → `patch` 整段 content。
-- 對長回答（例如 8–16KB），每次都重寫整段，O(n²) 寫入量。
-- 每次 patch 都會推送完整訊息到所有訂閱 `listMessages` 的 client，流量跟著放大。
+This created three long-term problems:
 
-`STREAM_FLUSH_THRESHOLD` 目前是 240 字元，較小，也放大了寫入頻率。
+- write amplification on a growing string
+- repeated `listMessages` invalidation for the entire chat history query
+- no clean boundary between stable history and in-flight stream state
 
-## 目標
+## Goal
 
-降低串流期間的寫入量與前端推送量，維持串流體感。
+Adopt the long-term steady-state design:
 
-這份 Plan 提供兩條路徑，**擇一執行**：
+- `messages` remains the durable chat-history record
+- active streaming moves to its own hot data surface
+- the UI reads stable history and active stream separately
+- assistant content is written to `messages.content` exactly once at terminalization time
 
-- **選項 A**：最小改動，只調整 threshold（快速見效）。
-- **選項 B**：schema 層支援 chunk-append（較完整，避免 O(n²)）。
+## Chosen Design
 
-## 選項 A — 調整 threshold（推薦先做）
+Add two streaming tables:
 
-### 做法
+- `messageStreams`
+- `messageStreamChunks`
 
-1. `convex/lib/constants.ts` 的 `STREAM_FLUSH_THRESHOLD` 從 `240` 改為 `512`（視實測決定）。
-2. 如果想再細緻，加一個「flush 間隔下限」：`generateAssistantReply` 迴圈內多記一個 `lastFlushAt`，至少間隔 200ms 才 flush，避免密集 delta 連發。
-3. `completeAssistantReply` 目前會 append 剩餘內容並 mark completed，不動。
+The design rules are:
 
-### 驗證
+1. `messages` stores durable history and coarse status only
+2. `messageStreams` stores one active stream header per in-flight assistant reply
+3. `messageStreamChunks` stores append-only tail segments
+4. tail chunks are periodically compacted into `messageStreams.compactedContent`
+5. `finalizeAssistantReply` writes the durable assistant content once, then deletes active stream state
 
-- 讓 OpenAI 回一段 10KB 左右的文字，觀察 Convex dashboard 的 `appendAssistantDelta` 呼叫次數與 total bytes written，應明顯下降。
-- 前端串流感受仍可接受（不會「一整段一次吐」）。
+Because the product is still alpha-stage, this plan uses the clean steady-state shape directly. There is no compatibility fallback for the old model.
 
-## 選項 B — 改 schema 用 chunks 陣列
+## Flow
 
-### 做法
+```mermaid
+flowchart TD
+  sendMessage[sendMessage]
+  userMessage[InsertUserMessage]
+  placeholder[InsertAssistantPlaceholder]
+  streamRow[InsertMessageStream]
+  actionRun[generateAssistantReply]
+  appendChunk[appendAssistantStreamChunk]
+  compactTail[CompactTailChunks]
+  activeQuery[getActiveMessageStream]
+  finalize[finalizeAssistantReply]
+  durableWrite[PatchMessagesContentOnce]
+  cleanup[DeleteStreamRowAndChunks]
 
-1. `convex/schema.ts` `messages` 新增：
-
-```ts
-contentChunks: v.optional(v.array(v.string())),
+  sendMessage --> userMessage
+  sendMessage --> placeholder
+  sendMessage --> streamRow
+  streamRow --> actionRun
+  actionRun --> appendChunk
+  appendChunk --> compactTail
+  compactTail --> activeQuery
+  actionRun --> finalize
+  finalize --> durableWrite
+  finalize --> cleanup
 ```
 
-2. `convex/chat.ts` `appendAssistantDelta`：
+## Backend Changes
 
-```ts
-const message = await ctx.db.get(args.assistantMessageId);
-if (!message) return;
-await ctx.db.patch(args.assistantMessageId, {
-  contentChunks: [...(message.contentChunks ?? []), args.delta],
-  status: 'streaming',
-});
-```
+### 1. Separate durable and hot state
 
-> 這裡每次仍需讀整個 `contentChunks` 陣列再 push（Convex 不支援 array append 原子 op），但陣列是引用數組，比重寫整段文字的 bytes 少。如果 Convex 有支援 patch push，改用 push。
+`convex/schema.ts` adds:
 
-3. `completeAssistantReply`：
+- `messageStreams`
+  - `assistantMessageId`
+  - `compactedContent`
+  - `compactedThroughSequence`
+  - `nextSequence`
+- `messageStreamChunks`
+  - `streamId`
+  - `sequence`
+  - `text`
 
-```ts
-const joined = (message.contentChunks ?? []).join('') + args.content;
-await ctx.db.patch(args.assistantMessageId, {
-  content: joined,
-  contentChunks: undefined,
-  status: 'completed',
-});
-```
+### 2. Keep the assistant placeholder row
 
-4. `src/components/chat-panel.tsx`（以及任何呈現 assistant message 的元件）：
-   - 顯示時 `const display = message.contentChunks?.length ? message.contentChunks.join('') : message.content;`
-   - `status === 'streaming'` 時用 `display`，其他狀態直接用 `content`。
+`sendMessage` still creates:
 
-### 驗證
+- one user message
+- one assistant placeholder message
 
-- 長回答（16KB+）的串流期間，Convex dashboard 顯示 `appendAssistantDelta` 每次 payload 是單一 delta 大小而非整段 content。
-- UI 顯示跟選項 A 的行為一致。
+It now also creates one `messageStreams` row bound to that assistant message.
 
-## 選擇建議
+### 3. Append to the stream surface, not to `messages`
 
-先上選項 A，上線後監 1 週；如果寫入量仍然明顯影響 Convex bandwidth / cost，再做選項 B。
+`generateAssistantReply` now buffers deltas in memory and flushes them to `appendAssistantStreamChunk`.
+
+Each flush:
+
+- inserts one `messageStreamChunks` row
+- advances `messageStreams.nextSequence`
+- optionally compacts old tail chunks into `messageStreams.compactedContent`
+
+### 4. Finalize once
+
+`finalizeAssistantReply`:
+
+- reads `compactedContent`
+- reads any remaining un-compacted tail chunks
+- appends the final in-memory delta
+- writes the final assistant text into `messages.content`
+- marks the assistant row completed
+- deletes the active stream row and chunk rows
+
+### 5. Recovery and cleanup
+
+- `failAssistantReply` preserves streamed partial content when available, marks the durable row failed, then deletes active stream state
+- `recoverStaleChatJob` now cleans up `messageStreams` and `messageStreamChunks`
+- thread and repository deletion paths now cascade through both new stream tables
+
+## Frontend Changes
+
+The UI no longer uses one query as both history storage and stream transport.
+
+`RepositoryShell` now reads:
+
+- `api.chat.listMessages` for durable history
+- `api.chat.getActiveMessageStream` for the in-flight assistant text
+
+`ChatPanel` merges them by `assistantMessageId`:
+
+- normal rows render from `message.content`
+- the active assistant row renders from `activeMessageStream.content`
+- once finalize completes, the stream query disappears and the durable row takes over
+
+## Why This Is Better
+
+This design is a better long-term fit because it:
+
+- isolates hot churn from durable history
+- keeps `listMessages` stable during streaming
+- avoids unbounded arrays on a single document
+- gives stale recovery and delete flows a clean ownership model
+- keeps the UI merge logic narrow and easy to reason about
+
+## Validation
+
+- `listMessages` should change when the placeholder is created and when the durable row is finalized, not for every stream flush.
+- `getActiveMessageStream` should be the only high-frequency subscription during generation.
+- long replies should stay bounded because the active tail is compacted as it grows.
+- stale recovery should leave no orphan `messageStreams` or `messageStreamChunks`.
+- deleting a thread or repository should clean both durable history and active stream state.
+
+## Test Coverage
+
+The implemented test surface should include:
+
+- stream append + compaction
+- finalize writes once and cleans up stream state
+- fail + stale recovery cleanup
+- placeholder rows not polluting reply context
+- UI handoff from active stream content to durable message content
+
+## System Design Doc
+
+See `docs/streaming-reply-optimization-system-design.md`.
 
 ## Out of Scope
 
-- 不改 OpenAI prompt / model 選擇邏輯。
-- 不改 `generateAssistantReply` 的錯誤處理與 heuristic fallback。
-- 不改 `MAX_VISIBLE_MESSAGES` / `MAX_CONTEXT_MESSAGES`。
+- external SSE / WebSocket transport outside Convex
+- token accounting and cost attribution for streamed replies
+- changing prompt construction or retrieval logic
+- allowing multiple concurrent active assistant replies per thread
+

@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import type { ThreadId, ChatMode, DeepModeStatus } from '@/lib/types';
+import type { ActiveMessageStream, ThreadId, ChatMode, DeepModeStatus } from '@/lib/types';
 
 const MODE_OPTIONS: ReadonlyArray<{
   value: ChatMode;
@@ -25,6 +25,7 @@ const EMPTY_CHAT_OWL_BLINK = ['   ^...^   ', '  / -,- \\  ', '  |):::(|  ', '===
 export function ChatPanel({
   selectedThreadId,
   messages,
+  activeMessageStream,
   isChatLoading,
   chatInput,
   setChatInput,
@@ -39,6 +40,7 @@ export function ChatPanel({
 }: {
   selectedThreadId: ThreadId | null;
   messages: Doc<'messages'>[] | undefined;
+  activeMessageStream: ActiveMessageStream | null | undefined;
   isChatLoading: boolean;
   chatInput: string;
   setChatInput: (v: string) => void;
@@ -75,7 +77,7 @@ export function ChatPanel({
           ) : (
             <div className="flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
               {messages!.map((message) => (
-                <MessageBubble key={message._id} message={message} />
+                <MessageBubble key={message._id} message={message} activeMessageStream={activeMessageStream ?? null} />
               ))}
             </div>
           )}
@@ -172,16 +174,26 @@ function EmptyChatHint() {
   );
 }
 
-function MessageBubble({ message }: { message: Doc<'messages'> }) {
+function MessageBubble({
+  message,
+  activeMessageStream,
+}: {
+  message: Doc<'messages'>;
+  activeMessageStream: ActiveMessageStream | null;
+}) {
   const isUser = message.role === 'user';
   const statusLabel = getMessageStatusLabel(message.status);
+  const displayContent =
+    message.role === 'assistant' && activeMessageStream?.assistantMessageId === message._id
+      ? activeMessageStream.content || message.content
+      : message.content;
   return (
     <Card className={cn('p-4', isUser ? 'bg-muted border-transparent' : 'border-transparent bg-transparent px-0')}>
       <div className="mb-1 flex items-center justify-between gap-3">
         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{message.role}</p>
         <p className="text-[10px] text-muted-foreground">{statusLabel}</p>
       </div>
-      <p className="whitespace-pre-wrap text-sm leading-6">{message.content || '…'}</p>
+      <p className="whitespace-pre-wrap text-sm leading-6">{displayContent || '…'}</p>
       {message.errorMessage ? <p className="mt-2 text-xs text-destructive">{message.errorMessage}</p> : null}
     </Card>
   );

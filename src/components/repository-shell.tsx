@@ -88,6 +88,10 @@ export function RepositoryShell() {
     api.chat.listMessages,
     effectiveSelectedThreadId ? { threadId: effectiveSelectedThreadId } : 'skip',
   );
+  const activeMessageStream = useQuery(
+    api.chat.getActiveMessageStream,
+    effectiveSelectedThreadId ? { threadId: effectiveSelectedThreadId } : 'skip',
+  );
 
   const isChatLoading =
     workspaceStatus === 'initializing' ||
@@ -174,6 +178,7 @@ export function RepositoryShell() {
             artifacts={artifacts}
             selectedThreadId={effectiveSelectedThreadId}
             messages={messages}
+            activeMessageStream={activeMessageStream}
             isChatLoading={isChatLoading}
             chatInput={chatInput}
             setChatInput={setChatInput}

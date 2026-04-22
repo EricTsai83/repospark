@@ -180,7 +180,12 @@ describe('rate limits and interactive job guards', () => {
     expect(successCount).toBeGreaterThan(0);
     expect(blockedThreadId).not.toBeNull();
     expectStructuredError(blockedError, 'RATE_LIMIT_EXCEEDED', 'chatRequestsGlobal');
-    expect(await getThreadCounts(t, blockedThreadId!)).toEqual({ jobs: 0, messages: 0 });
+    expect(await getThreadCounts(t, blockedThreadId!)).toEqual({
+      jobs: 0,
+      messages: 0,
+      streams: 0,
+      streamChunks: 0,
+    });
   });
 
   test('daytona global limiter eventually rejects multi-owner imports without side effects', async () => {
@@ -261,6 +266,24 @@ describe('rate limits and interactive job guards', () => {
         content: '',
       });
 
+      const streamId = await ctx.db.insert('messageStreams', {
+        repositoryId,
+        threadId,
+        jobId,
+        assistantMessageId,
+        ownerTokenIdentifier,
+        compactedContent: 'Partial ',
+        compactedThroughSequence: -1,
+        nextSequence: 1,
+        startedAt: Date.now() - 120_000,
+        lastAppendedAt: Date.now() - 30_000,
+      });
+      await ctx.db.insert('messageStreamChunks', {
+        streamId,
+        sequence: 0,
+        text: 'reply',
+      });
+
       return { jobId, assistantMessageId };
     });
 
@@ -269,12 +292,18 @@ describe('rate limits and interactive job guards', () => {
     const result = await t.run(async (ctx) => ({
       job: await ctx.db.get(jobId),
       assistantMessage: await ctx.db.get(assistantMessageId),
+      streams: await ctx.db
+        .query('messageStreams')
+        .withIndex('by_jobId', (q) => q.eq('jobId', jobId))
+        .take(10),
     }));
 
     expect(result.job?.status).toBe('failed');
     expect(result.job?.leaseExpiresAt).toBeUndefined();
     expect(result.assistantMessage?.status).toBe('failed');
-    expect(result.assistantMessage?.content).toContain('stalled');
+    expect(result.assistantMessage?.content).toBe('Partial reply');
+    expect(result.assistantMessage?.errorMessage).toContain('stalled');
+    expect(result.streams).toHaveLength(0);
   });
 
   test('stale deep analysis recovery fails the expired job', async () => {
@@ -439,10 +468,24 @@ async function getThreadCounts(t: AppTestConvex, threadId: Id<'threads'>) {
       .query('messages')
       .withIndex('by_threadId', (q) => q.eq('threadId', threadId))
       .take(100);
+    const streams = await ctx.db
+      .query('messageStreams')
+      .withIndex('by_threadId', (q) => q.eq('threadId', threadId))
+      .take(50);
+    let streamChunks = 0;
+    for (const stream of streams) {
+      const chunks = await ctx.db
+        .query('messageStreamChunks')
+        .withIndex('by_streamId_and_sequence', (q) => q.eq('streamId', stream._id))
+        .take(100);
+      streamChunks += chunks.length;
+    }
 
     return {
       jobs: jobs.length,
       messages: messages.length,
+      streams: streams.length,
+      streamChunks,
     };
   });
 }

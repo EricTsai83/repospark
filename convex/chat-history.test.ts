@@ -40,6 +40,31 @@ describe('chat history ordering', () => {
     expect(context.messages).toHaveLength(MAX_CONTEXT_MESSAGES);
     expect(context.messages.map((message) => message.content)).toEqual(contents.slice(-MAX_CONTEXT_MESSAGES));
   });
+
+  test('getReplyContext ignores an empty assistant placeholder message', async () => {
+    const ownerTokenIdentifier = 'user|chat-history-placeholder';
+    const t = convexTest(schema, modules);
+    const { repositoryId, threadId } = await seedThreadWithMessages(t, ownerTokenIdentifier, 4);
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert('messages', {
+        repositoryId,
+        threadId,
+        ownerTokenIdentifier,
+        role: 'assistant',
+        status: 'streaming',
+        mode: 'fast',
+        content: '',
+      });
+    });
+
+    const viewer = t.withIdentity({ tokenIdentifier: ownerTokenIdentifier });
+    const messages = await viewer.query(api.chat.listMessages, { threadId });
+    const context = await t.query(internal.chat.getReplyContext, { threadId });
+
+    expect(messages.at(-1)?.content).toBe('');
+    expect(context.messages.at(-1)?.content).toBe('message-3');
+  });
 });
 
 async function seedThreadWithMessages(
@@ -89,6 +114,6 @@ async function seedThreadWithMessages(
       vi.advanceTimersByTime(1_000);
     }
 
-    return { threadId, contents };
+    return { repositoryId, threadId, contents };
   });
 }
