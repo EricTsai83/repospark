@@ -44,6 +44,8 @@ flowchart TD
   OAuthState --> Installation
 ```
 
+
+
 ### `repositories`
 
 `repositories` is the aggregate root of the product. It defines a repository that can be imported, queried through chat, and analyzed, while also holding several "current latest state" pointers:
@@ -249,3 +251,4 @@ This split allows the UI, background workflows, and analysis features to share t
 - `jobs` provides a unified tracking layer that simplifies the UI, but the details of each job kind still require reading the implementation.
 - `jobs.kind = 'index'` is currently a reserved enum value; the codebase does not insert jobs with `kind: 'index'`, and indexing still happens inside the import pipeline.
 - `analysisArtifacts.version` is currently always inserted as `1`, so artifact version management is not implemented yet.
+

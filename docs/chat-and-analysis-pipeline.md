@@ -89,12 +89,24 @@ That means Quick chat does not read the whole repository directly. It reads the 
 
 ### 4. Select chunks
 
-The chat pipeline uses tokens from the user's question to score chunk paths and summaries and pick the most relevant fragments.
+The chat pipeline now uses a two-step retrieval flow:
+
+1. build a bounded candidate pool from the latest import snapshot
+2. rerank that candidate pool locally before building the prompt
+
+The candidate pool is assembled from:
+
+- baseline chunks from the head and tail of `by_importId_and_path_and_chunkIndex`
+- `repoChunks.search_summary` hits filtered by `importId`
+- `repoChunks.search_content` hits filtered by `importId`
+
+This matters because query-aware retrieval must not break the import snapshot boundary. Search is therefore always scoped to `repository.latestImportId`, so old snapshots cannot leak back into chat context.
 
 This is not a full RAG ranking pipeline. It is a lightweight relevance selector whose main goals are:
 
 - reducing prompt size
 - improving answer focus
+- keeping read cost bounded without introducing embeddings yet
 
 ### 5. Generate the answer
 

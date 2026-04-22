@@ -1,12 +1,15 @@
 import { openai } from '@ai-sdk/openai';
 import { streamText } from 'ai';
 import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { mutation, query, internalAction, internalMutation, internalQuery } from './_generated/server';
 import { requireViewerIdentity } from './lib/auth';
 import {
+  CHAT_BASELINE_CHUNKS,
+  CHAT_CANDIDATE_POOL_LIMIT,
+  CHAT_SEARCH_RESULTS_PER_INDEX,
   MAX_CONTEXT_ARTIFACTS,
   MAX_CONTEXT_MESSAGES,
   MAX_VISIBLE_MESSAGES,
@@ -294,15 +297,11 @@ export const getReplyContext = internalQuery({
       .order('desc')
       .take(10);
     const artifacts = [...importArtifacts, ...deepAnalysisArtifacts];
-    const chunks = repository.latestImportId
-      ? await ctx.db
-          .query('repoChunks')
-          .withIndex('by_importId_and_path_and_chunkIndex', (q) =>
-            q.eq('importId', repository.latestImportId!),
-          )
-          .take(80)
-      : [];
     const messages = await loadRecentMessages(ctx, args.threadId, MAX_CONTEXT_MESSAGES);
+    const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+    const chunks = repository.latestImportId
+      ? await loadCandidateChunks(ctx, repository.latestImportId, latestUserMessage?.content ?? '')
+      : [];
 
     return {
       ownerTokenIdentifier: repository.ownerTokenIdentifier,
@@ -561,6 +560,60 @@ async function loadRecentMessages(
   return recentMessages.reverse();
 }
 
+async function loadCandidateChunks(
+  ctx: Pick<QueryCtx, 'db'>,
+  importId: Id<'imports'>,
+  question: string,
+) {
+  const headCount = Math.ceil(CHAT_BASELINE_CHUNKS / 2);
+  const tailCount = CHAT_BASELINE_CHUNKS - headCount;
+  const [headChunks, tailChunks] = await Promise.all([
+    ctx.db
+      .query('repoChunks')
+      .withIndex('by_importId_and_path_and_chunkIndex', (q) => q.eq('importId', importId))
+      .take(headCount),
+    ctx.db
+      .query('repoChunks')
+      .withIndex('by_importId_and_path_and_chunkIndex', (q) => q.eq('importId', importId))
+      .order('desc')
+      .take(tailCount),
+  ]);
+  const searchQuery = buildChunkSearchQuery(question);
+  let summaryMatches: Doc<'repoChunks'>[] = [];
+  let contentMatches: Doc<'repoChunks'>[] = [];
+
+  if (searchQuery) {
+    [summaryMatches, contentMatches] = await Promise.all([
+      ctx.db
+        .query('repoChunks')
+        .withSearchIndex('search_summary', (q) => q.search('summary', searchQuery).eq('importId', importId))
+        .take(CHAT_SEARCH_RESULTS_PER_INDEX),
+      ctx.db
+        .query('repoChunks')
+        .withSearchIndex('search_content', (q) => q.search('content', searchQuery).eq('importId', importId))
+        .take(CHAT_SEARCH_RESULTS_PER_INDEX),
+    ]);
+  }
+
+  const candidatesById = new Map<string, Doc<'repoChunks'>>();
+  for (const chunk of [...summaryMatches, ...contentMatches, ...headChunks, ...[...tailChunks].reverse()]) {
+    if (candidatesById.has(chunk._id)) {
+      continue;
+    }
+
+    candidatesById.set(chunk._id, chunk);
+    if (candidatesById.size >= CHAT_CANDIDATE_POOL_LIMIT) {
+      break;
+    }
+  }
+
+  return Array.from(candidatesById.values());
+}
+
+function buildChunkSearchQuery(question: string) {
+  return tokenizeQuestion(question).slice(0, 8).join(' ');
+}
+
 function buildUserPrompt(
   context: ReplyContext,
   question: string,
@@ -614,26 +667,45 @@ function buildHeuristicAnswer(
     .join('\n');
 }
 
-function selectRelevantChunks(
+function tokenizeQuestion(question: string) {
+  return Array.from(
+    new Set(
+      question
+        .toLowerCase()
+        .split(/[^a-z0-9_]+/g)
+        .filter((token) => token.length > 2),
+    ),
+  );
+}
+
+export function selectRelevantChunks(
   chunks: Array<{ path: string; summary: string; content: string }>,
   question: string,
 ) {
-  const tokens = question
-    .toLowerCase()
-    .split(/[^a-z0-9_]+/g)
-    .filter((token) => token.length > 2);
+  const tokens = tokenizeQuestion(question);
+
+  if (tokens.length === 0) {
+    return chunks.slice(0, MAX_RELEVANT_CHUNKS);
+  }
 
   return [...chunks]
     .map((chunk) => ({
       ...chunk,
       score: tokens.reduce((count, token) => {
-        if (chunk.path.toLowerCase().includes(token) || chunk.summary.toLowerCase().includes(token)) {
-          return count + 1;
+        let nextScore = count;
+        if (chunk.path.toLowerCase().includes(token)) {
+          nextScore += 3;
         }
-        return count;
+        if (chunk.summary.toLowerCase().includes(token)) {
+          nextScore += 2;
+        }
+        if (chunk.content.toLowerCase().includes(token)) {
+          nextScore += 1;
+        }
+        return nextScore;
       }, 0),
     }))
-    .sort((left, right) => right.score - left.score)
+    .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
     .slice(0, MAX_RELEVANT_CHUNKS)
     .map(({ score: _score, ...chunk }) => chunk);
 }
