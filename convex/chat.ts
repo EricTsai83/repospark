@@ -26,6 +26,7 @@ import {
   isLeaseActive,
   throwOperationAlreadyInProgress,
 } from './lib/rateLimit';
+import { logWarn } from './lib/observability';
 
 type ReplyContext = {
   ownerTokenIdentifier: string;
@@ -73,21 +74,17 @@ async function getMessageStreamByThread(ctx: DbCtx, threadId: Id<'threads'>) {
 }
 
 async function getMessageStreamByAssistantMessageId(ctx: DbCtx, assistantMessageId: Id<'messages'>) {
-  const streams = await ctx.db
+  return await ctx.db
     .query('messageStreams')
     .withIndex('by_assistantMessageId', (q) => q.eq('assistantMessageId', assistantMessageId))
-    .take(5);
-
-  return streams[0] ?? null;
+    .unique();
 }
 
 async function getMessageStreamByJobId(ctx: DbCtx, jobId: Id<'jobs'>) {
-  const streams = await ctx.db
+  return await ctx.db
     .query('messageStreams')
     .withIndex('by_jobId', (q) => q.eq('jobId', jobId))
-    .take(5);
-
-  return streams[0] ?? null;
+    .unique();
 }
 
 async function loadStreamTailChunks(
@@ -109,6 +106,16 @@ async function loadMessageStreamSnapshot(ctx: DbCtx, assistantMessageId: Id<'mes
     return null;
   }
 
+  const tailChunks = await loadAllStreamTailChunks(ctx, stream);
+
+  return {
+    stream,
+    tailChunks,
+    content: `${stream.compactedContent}${tailChunks.map((chunk) => chunk.text).join('')}`,
+  };
+}
+
+async function loadAllStreamTailChunks(ctx: DbCtx, stream: Doc<'messageStreams'>) {
   const tailChunks: Doc<'messageStreamChunks'>[] = [];
   let cursor = stream.compactedThroughSequence;
   while (true) {
@@ -126,11 +133,7 @@ async function loadMessageStreamSnapshot(ctx: DbCtx, assistantMessageId: Id<'mes
     }
   }
 
-  return {
-    stream,
-    tailChunks,
-    content: `${stream.compactedContent}${tailChunks.map((chunk) => chunk.text).join('')}`,
-  };
+  return tailChunks;
 }
 
 async function compactMessageStreamTail(ctx: MutationCtx, streamId: Id<'messageStreams'>) {
@@ -247,7 +250,7 @@ export const getActiveMessageStream = query({
       return null;
     }
 
-    const tailChunks = await loadStreamTailChunks(ctx, stream);
+    const tailChunks = await loadAllStreamTailChunks(ctx, stream);
 
     return {
       assistantMessageId: stream.assistantMessageId,
@@ -549,6 +552,7 @@ export const generateAssistantReply = internalAction({
       jobId: args.jobId,
     });
 
+    // Anything still buffered in pendingDelta below STREAM_FLUSH_THRESHOLD can be lost on a crash; recoverStaleChatJob only sees persisted messageStreamChunks flushed via appendAssistantStreamChunk before compactMessageStreamTail/finalizeAssistantReply/failAssistantReply run.
     let pendingDelta = '';
 
     try {
@@ -639,7 +643,14 @@ export const appendAssistantStreamChunk = internalMutation({
 
     const stream = await getMessageStreamByAssistantMessageId(ctx, args.assistantMessageId);
     if (!stream) {
-      return;
+      logWarn('chat', 'assistant_stream_missing_for_chunk_append', {
+        assistantMessageId: args.assistantMessageId,
+        deltaLength: args.delta.length,
+        hint: 'messageStreamChunks append skipped before compactMessageStreamTail',
+      });
+      throw new Error(
+        'Missing message stream while appending assistant delta: messageStreamChunks append aborted before compactMessageStreamTail.',
+      );
     }
 
     await ctx.db.insert('messageStreamChunks', {
@@ -708,6 +719,9 @@ export const failAssistantReply = internalMutation({
     const streamSnapshot = await loadMessageStreamSnapshot(ctx, args.assistantMessageId);
     const message = await ctx.db.get(args.assistantMessageId);
     if (!message) {
+      if (streamSnapshot) {
+        await deleteMessageStreamState(ctx, streamSnapshot.stream._id);
+      }
       return;
     }
 

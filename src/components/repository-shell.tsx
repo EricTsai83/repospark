@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useCheckForUpdates } from '@/hooks/use-check-for-updates';
 import { useRepositoryActions } from '@/hooks/use-repository-actions';
 import { useRepositorySelection } from '@/hooks/use-repository-selection';
-import type { ActiveMessageStream, RepositoryId, ThreadId, ChatMode } from '@/lib/types';
+import type { RepositoryId, ThreadId, ChatMode } from '@/lib/types';
 
 type RepositoryWorkspaceStatus = 'initializing' | 'no-repo' | 'ready';
 
@@ -91,7 +91,7 @@ export function RepositoryShell() {
   const activeMessageStream = useQuery(
     api.chat.getActiveMessageStream,
     effectiveSelectedThreadId ? { threadId: effectiveSelectedThreadId } : 'skip',
-  ) as ActiveMessageStream | null | undefined;
+  );
 
   const isChatLoading =
     workspaceStatus === 'initializing' ||

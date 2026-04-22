@@ -3,7 +3,9 @@
 import type React from 'react';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
+import type { Doc } from '../../convex/_generated/dataModel';
 import { ChatPanel } from './chat-panel';
+import type { MessageId, ThreadId } from '@/lib/types';
 
 vi.mock('@/components/app-notice', () => ({
   AppNotice: ({ title, message }: { title: string; message: string }) => (
@@ -36,22 +38,25 @@ vi.mock('@/components/ui/select', () => ({
   SelectTrigger: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
+const threadId = 'thread_1' as ThreadId;
+const assistantMessageId = 'message_1' as MessageId;
+
 describe('ChatPanel streaming rendering', () => {
   test('renders active stream content for the in-flight assistant message', () => {
     render(
       <ChatPanel
-        selectedThreadId={'thread_1' as never}
+        selectedThreadId={threadId}
         messages={[
           {
-            _id: 'message_1',
+            _id: assistantMessageId,
             role: 'assistant',
             status: 'streaming',
             content: '',
             errorMessage: undefined,
-          } as never,
+          } as unknown as Doc<'messages'>,
         ]}
         activeMessageStream={{
-          assistantMessageId: 'message_1' as never,
+          assistantMessageId,
           content: 'streamed reply',
           startedAt: Date.now(),
           lastAppendedAt: Date.now(),
@@ -76,18 +81,18 @@ describe('ChatPanel streaming rendering', () => {
   test('hands off from active stream content to durable message content without duplication', () => {
     const { rerender } = render(
       <ChatPanel
-        selectedThreadId={'thread_1' as never}
+        selectedThreadId={threadId}
         messages={[
           {
-            _id: 'message_1',
+            _id: assistantMessageId,
             role: 'assistant',
             status: 'streaming',
             content: '',
             errorMessage: undefined,
-          } as never,
+          } as unknown as Doc<'messages'>,
         ]}
         activeMessageStream={{
-          assistantMessageId: 'message_1' as never,
+          assistantMessageId,
           content: 'final streamed reply',
           startedAt: Date.now(),
           lastAppendedAt: Date.now(),
@@ -106,17 +111,19 @@ describe('ChatPanel streaming rendering', () => {
       />,
     );
 
+    expect(screen.getByText('final streamed reply')).toBeInTheDocument();
+
     rerender(
       <ChatPanel
-        selectedThreadId={'thread_1' as never}
+        selectedThreadId={threadId}
         messages={[
           {
-            _id: 'message_1',
+            _id: assistantMessageId,
             role: 'assistant',
             status: 'completed',
             content: 'final streamed reply',
             errorMessage: undefined,
-          } as never,
+          } as unknown as Doc<'messages'>,
         ]}
         activeMessageStream={null}
         isChatLoading={false}

@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { convexTest } from 'convex-test';
 import { api, internal } from './_generated/api';
-import { MESSAGE_STREAM_COMPACT_CHUNK_THRESHOLD } from './lib/constants';
+import { CASCADE_BATCH_SIZE, MESSAGE_STREAM_COMPACT_CHUNK_THRESHOLD } from './lib/constants';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.ts');
@@ -22,18 +22,21 @@ describe('chat streaming lifecycle', () => {
     const ownerTokenIdentifier = 'user|active-stream';
     const t = convexTest(schema, modules);
     const { threadId, streamId, assistantMessageId } = await createStreamingFixture(t, ownerTokenIdentifier, 'active-stream');
+    const tailParts = Array.from({ length: CASCADE_BATCH_SIZE + 5 }, (_, index) => `chunk-${index}|`);
 
     await t.run(async (ctx) => {
       await ctx.db.patch(streamId, {
         compactedContent: 'Hello ',
         compactedThroughSequence: 0,
-        nextSequence: 2,
+        nextSequence: tailParts.length + 1,
       });
-      await ctx.db.insert('messageStreamChunks', {
-        streamId,
-        sequence: 1,
-        text: 'world',
-      });
+      for (const [index, part] of tailParts.entries()) {
+        await ctx.db.insert('messageStreamChunks', {
+          streamId,
+          sequence: index + 1,
+          text: part,
+        });
+      }
       await ctx.db.patch(assistantMessageId, {
         status: 'streaming',
       });
@@ -44,7 +47,7 @@ describe('chat streaming lifecycle', () => {
 
     expect(activeStream).toMatchObject({
       assistantMessageId,
-      content: 'Hello world',
+      content: `Hello ${tailParts.join('')}`,
     });
   });
 
@@ -136,6 +139,62 @@ describe('chat streaming lifecycle', () => {
     expect(failed.tailChunks).toHaveLength(0);
   });
 
+  test('appendAssistantStreamChunk throws when the stream state is missing', async () => {
+    const ownerTokenIdentifier = 'user|stream-missing';
+    const t = convexTest(schema, modules);
+    const { assistantMessageId, streamId } = await createStreamingFixture(t, ownerTokenIdentifier, 'stream-missing');
+
+    await t.run(async (ctx) => {
+      await ctx.db.delete(streamId);
+    });
+
+    await expect(
+      t.mutation(internal.chat.appendAssistantStreamChunk, {
+        assistantMessageId,
+        delta: 'orphaned chunk',
+      }),
+    ).rejects.toThrow(/messageStreamChunks.*compactMessageStreamTail/);
+  });
+
+  test('failAssistantReply still removes stream state when the assistant message is gone', async () => {
+    const ownerTokenIdentifier = 'user|stream-cleanup-without-message';
+    const t = convexTest(schema, modules);
+    const { jobId, assistantMessageId, streamId } = await createStreamingFixture(
+      t,
+      ownerTokenIdentifier,
+      'stream-cleanup-without-message',
+    );
+
+    await t.mutation(internal.chat.appendAssistantStreamChunk, {
+      assistantMessageId,
+      delta: 'partial ',
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.delete(assistantMessageId);
+    });
+
+    await t.mutation(internal.chat.failAssistantReply, {
+      assistantMessageId,
+      jobId,
+      errorMessage: 'stream failed after message delete',
+      finalDelta: 'tail',
+    });
+
+    const failed = await t.run(async (ctx) => ({
+      job: await ctx.db.get(jobId),
+      stream: await ctx.db.get(streamId),
+      tailChunks: await ctx.db
+        .query('messageStreamChunks')
+        .withIndex('by_streamId_and_sequence', (q) => q.eq('streamId', streamId))
+        .take(20),
+    }));
+
+    expect(failed.job?.status).toBe('running');
+    expect(failed.stream).toBeNull();
+    expect(failed.tailChunks).toHaveLength(0);
+  });
+
   test('repository cascade cleanup removes active stream tables', async () => {
     const ownerTokenIdentifier = 'user|repo-cascade';
     const t = convexTest(schema, modules);
@@ -144,10 +203,19 @@ describe('chat streaming lifecycle', () => {
       ownerTokenIdentifier,
       'repo-cascade',
     );
+    const chunkCount = CASCADE_BATCH_SIZE + 3;
 
-    await t.mutation(internal.chat.appendAssistantStreamChunk, {
-      assistantMessageId,
-      delta: 'active chunk',
+    await t.run(async (ctx) => {
+      await ctx.db.patch(streamId, {
+        nextSequence: chunkCount,
+      });
+      for (let index = 0; index < chunkCount; index += 1) {
+        await ctx.db.insert('messageStreamChunks', {
+          streamId,
+          sequence: index,
+          text: `active-chunk-${index}|`,
+        });
+      }
     });
 
     await t.mutation(internal.repositories.cascadeDeleteRepository, {

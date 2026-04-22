@@ -268,6 +268,11 @@ export default defineSchema({
     .index('by_threadId_and_status', ['threadId', 'status'])
     .index('by_jobId', ['jobId']),
 
+  /**
+   * Application invariant: each assistant reply owns at most one `messageStreams`
+   * row per `assistantMessageId` and per `jobId`; its `messageStreamChunks`
+   * rows are the canonical persisted tail for that singleton stream.
+   */
   messageStreams: defineTable({
     repositoryId: v.id('repositories'),
     threadId: v.id('threads'),
@@ -284,6 +289,10 @@ export default defineSchema({
     .index('by_assistantMessageId', ['assistantMessageId'])
     .index('by_jobId', ['jobId']),
 
+  /**
+   * `messageStreamChunks` only belong to that single canonical `messageStreams`
+   * row and should never be shared across duplicate stream records.
+   */
   messageStreamChunks: defineTable({
     streamId: v.id('messageStreams'),
     sequence: v.number(),
