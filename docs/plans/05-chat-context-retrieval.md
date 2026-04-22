@@ -72,6 +72,7 @@ if (chunk.path.toLowerCase().includes(token) ||
 - `summary` 命中: `+2`
 - `content` 命中: `+1`
 - token 為空時直接回傳前 `MAX_RELEVANT_CHUNKS`
+- 若分數相同，保留 candidate pool 原本的順序當作 tie-break，避免同分 chunk 被 rerank 階段重新洗牌，同時維持可重現的結果
 
 這樣做的原因是：
 

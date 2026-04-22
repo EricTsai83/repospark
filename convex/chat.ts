@@ -667,13 +667,70 @@ function buildHeuristicAnswer(
     .join('\n');
 }
 
+const SHORT_TECH_TOKENS = new Set([
+  'ai',
+  'cd',
+  'ci',
+  'db',
+  'dx',
+  'fs',
+  'go',
+  'io',
+  'js',
+  'md',
+  'os',
+  'qa',
+  'ts',
+  'ui',
+  'ux',
+  'vm',
+]);
+
+const QUESTION_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'are',
+  'can',
+  'does',
+  'for',
+  'how',
+  'in',
+  'is',
+  'it',
+  'me',
+  'of',
+  'on',
+  'or',
+  'show',
+  'tell',
+  'the',
+  'this',
+  'to',
+  'what',
+  'when',
+  'where',
+  'which',
+  'who',
+  'why',
+  'work',
+  'works',
+  'you',
+  'your',
+]);
+
 function tokenizeQuestion(question: string) {
   return Array.from(
     new Set(
       question
         .toLowerCase()
         .split(/[^a-z0-9_]+/g)
-        .filter((token) => token.length > 2),
+        .filter(
+          (token) =>
+            token.length > 0 &&
+            !QUESTION_STOPWORDS.has(token) &&
+            (token.length > 2 || SHORT_TECH_TOKENS.has(token)),
+        ),
     ),
   );
 }
@@ -689,8 +746,9 @@ export function selectRelevantChunks(
   }
 
   return [...chunks]
-    .map((chunk) => ({
+    .map((chunk, origIndex) => ({
       ...chunk,
+      origIndex,
       score: tokens.reduce((count, token) => {
         let nextScore = count;
         if (chunk.path.toLowerCase().includes(token)) {
@@ -705,7 +763,7 @@ export function selectRelevantChunks(
         return nextScore;
       }, 0),
     }))
-    .sort((left, right) => right.score - left.score || left.path.localeCompare(right.path))
+    .sort((left, right) => right.score - left.score || left.origIndex - right.origIndex)
     .slice(0, MAX_RELEVANT_CHUNKS)
-    .map(({ score: _score, ...chunk }) => chunk);
+    .map(({ origIndex: _origIndex, score: _score, ...chunk }) => chunk);
 }

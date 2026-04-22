@@ -64,8 +64,6 @@ flowchart TD
   Q --> I
 ```
 
-
-
 ## Design Principles
 
 ### 1. Record Intent Before External Creation
@@ -235,4 +233,3 @@ Those belong in implementation plans or operations-specific documents rather tha
 - `integrations-and-operations.md`
 - `plans/03-daytona-orphan-protection.md`
 - `plans/09-daytona-webhook-reconciliation.md`
-

@@ -225,6 +225,53 @@ describe('chat reply context', () => {
         lastMessageAt: Date.now(),
       });
 
+      const olderJobId = await ctx.db.insert('jobs', {
+        repositoryId,
+        ownerTokenIdentifier,
+        kind: 'import',
+        status: 'completed',
+        stage: 'completed',
+        progress: 1,
+        costCategory: 'indexing',
+        triggerSource: 'user',
+      });
+      const olderImportId = await ctx.db.insert('imports', {
+        repositoryId,
+        ownerTokenIdentifier,
+        sourceUrl: 'https://github.com/acme/query-aware-repo',
+        branch: 'main',
+        adapterKind: 'git_clone',
+        status: 'completed',
+        jobId: olderJobId,
+      });
+      const olderFileId = await ctx.db.insert('repoFiles', {
+        repositoryId,
+        ownerTokenIdentifier,
+        importId: olderImportId,
+        path: 'src/file-stale-auth.ts',
+        parentPath: 'src',
+        fileType: 'file',
+        extension: 'ts',
+        language: 'typescript',
+        sizeBytes: 128,
+        isEntryPoint: false,
+        isConfig: false,
+        isImportant: false,
+      });
+      await ctx.db.insert('repoChunks', {
+        repositoryId,
+        ownerTokenIdentifier,
+        importId: olderImportId,
+        fileId: olderFileId,
+        path: 'src/file-stale-auth.ts',
+        chunkIndex: 0,
+        startLine: 1,
+        endLine: 6,
+        chunkKind: 'code',
+        summary: 'src/file-stale-auth.ts: stale auth middleware boundary',
+        content: 'export function handleAuthToken() { return "stale auth middleware token flow"; }',
+      });
+
       const latestJobId = await ctx.db.insert('jobs', {
         repositoryId,
         ownerTokenIdentifier,
@@ -303,6 +350,7 @@ describe('chat reply context', () => {
     const context = await t.query(internal.chat.getReplyContext, { threadId });
 
     expect(context.chunks.some((chunk) => chunk.path === 'src/file-180-auth.ts')).toBe(true);
+    expect(context.chunks.some((chunk) => chunk.path === 'src/file-stale-auth.ts')).toBe(false);
   });
 
   test('keeps a baseline chunk set when search terms miss everything', async () => {
@@ -427,5 +475,45 @@ describe('chat reply context', () => {
     );
 
     expect(ranked[0]?.path).toBe('src/helpers.ts');
+  });
+
+  test('preserves short technical tokens while dropping question filler words', () => {
+    const ranked = selectRelevantChunks(
+      [
+        {
+          path: 'src/how-does-work.ts',
+          summary: 'How does the system work',
+          content: 'This file explains how it works for you.',
+        },
+        {
+          path: 'src/db-auth.ts',
+          summary: 'DB auth adapter',
+          content: 'Database auth token validation pipeline.',
+        },
+      ],
+      'How does db auth work?',
+    );
+
+    expect(ranked[0]?.path).toBe('src/db-auth.ts');
+  });
+
+  test('preserves original candidate order for equal scores', () => {
+    const ranked = selectRelevantChunks(
+      [
+        {
+          path: 'src/zeta.ts',
+          summary: 'Auth helper',
+          content: 'Token refresh flow.',
+        },
+        {
+          path: 'src/alpha.ts',
+          summary: 'Auth helper',
+          content: 'Token refresh flow.',
+        },
+      ],
+      'auth',
+    );
+
+    expect(ranked.map((chunk) => chunk.path)).toEqual(['src/zeta.ts', 'src/alpha.ts']);
   });
 });

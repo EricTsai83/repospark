@@ -34,7 +34,7 @@
 
 1. **Vercel 負責 frontend hosting 與 Git-based deploy trigger**
 2. **Convex deploy 直接內嵌在 Vercel build**
-3. `**VITE_CONVEX_URL` 由 deploy 階段自動注入**
+3. **`VITE_CONVEX_URL`** 由 deploy 階段自動注入
 4. **Preview 與 Production 各自對應自己的 Convex deployment**
 5. **CD 保持最小化，由 Vercel 負責 deploy**
 6. **CI 若需要，僅用於品質檢查，不接手 production deploy**
@@ -94,18 +94,29 @@ Repospark 也應該照做：
 
 - `CONVEX_DEPLOY_KEY=<preview deploy key>`
 - `VITE_WORKOS_CLIENT_ID=<public preview value>`
-- `VITE_WORKOS_REDIRECT_URI=https://${VERCEL_BRANCH_URL}/callback`
+- `VITE_VERCEL_BRANCH_URL=$VERCEL_BRANCH_URL`
 
 #### Production environment
 
 - `CONVEX_DEPLOY_KEY=<production deploy key>`
 - `VITE_WORKOS_CLIENT_ID=<public production value>`
-- `VITE_WORKOS_REDIRECT_URI=https://${VERCEL_PROJECT_PRODUCTION_URL}/callback`
+- `VITE_VERCEL_PROJECT_PRODUCTION_URL=$VERCEL_PROJECT_PRODUCTION_URL`
 
 重要原則：
 
 - **不要**讓 Preview 與 Production 共用同一把 `CONVEX_DEPLOY_KEY`
 - `VITE_CONVEX_URL` 不需要手動填進 Vercel，交給 `convex deploy --cmd-url-env-var-name` 注入即可
+- **不要**在 Vercel dashboard 直接填 `VITE_WORKOS_REDIRECT_URI=https://${VERCEL_BRANCH_URL}/callback` 這種模板字串，Vercel 不會幫你展開
+- 改成在 frontend build / app code 內，透過 `import.meta.env.VITE_VERCEL_BRANCH_URL` 或 `import.meta.env.VITE_VERCEL_PROJECT_PRODUCTION_URL` 組出完整 callback URL（例如 `https://${host}/callback`），再把該值傳給 WorkOS / auth bootstrap
+
+例如：
+
+```ts
+const vercelHost =
+  import.meta.env.VITE_VERCEL_BRANCH_URL ??
+  import.meta.env.VITE_VERCEL_PROJECT_PRODUCTION_URL;
+const redirectUri = vercelHost ? `https://${vercelHost}/callback` : import.meta.env.VITE_WORKOS_REDIRECT_URI;
+```
 
 ### D. Convex deployment 環境也要對齊
 
