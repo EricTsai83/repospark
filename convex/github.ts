@@ -103,18 +103,30 @@ export const saveInstallation = internalMutation({
     repositorySelection: v.union(v.literal('all'), v.literal('selected')),
   },
   handler: async (ctx, args) => {
-    // Look for an existing active installation for this owner
-    const existingActive = await ctx.db
+    const activeInstallations = await ctx.db
       .query('githubInstallations')
       .withIndex('by_ownerTokenIdentifier_and_status', (q) =>
         q.eq('ownerTokenIdentifier', args.ownerTokenIdentifier).eq('status', 'active'),
       )
-      .first();
+      .take(5);
 
     const now = Date.now();
+    const conflictingActive = activeInstallations.find(
+      (installation) => installation.installationId !== args.installationId,
+    );
+    if (conflictingActive) {
+      return {
+        kind: 'conflict' as const,
+        existingInstallationId: conflictingActive.installationId,
+        existingAccountLogin: conflictingActive.accountLogin,
+      };
+    }
+
+    const existingActive = activeInstallations.find(
+      (installation) => installation.installationId === args.installationId,
+    );
 
     if (existingActive) {
-      // Patch the active installation
       await ctx.db.patch(existingActive._id, {
         installationId: args.installationId,
         accountLogin: args.accountLogin,
@@ -125,18 +137,27 @@ export const saveInstallation = internalMutation({
         suspendedAt: undefined,
         deletedAt: undefined,
       });
-    } else {
-      // Insert a new active installation
-      await ctx.db.insert('githubInstallations', {
-        ownerTokenIdentifier: args.ownerTokenIdentifier,
+
+      return {
+        kind: 'connected' as const,
         installationId: args.installationId,
-        accountLogin: args.accountLogin,
-        accountType: args.accountType,
-        status: 'active',
-        repositorySelection: args.repositorySelection,
-        connectedAt: now,
-      });
+      };
     }
+
+    await ctx.db.insert('githubInstallations', {
+      ownerTokenIdentifier: args.ownerTokenIdentifier,
+      installationId: args.installationId,
+      accountLogin: args.accountLogin,
+      accountType: args.accountType,
+      status: 'active',
+      repositorySelection: args.repositorySelection,
+      connectedAt: now,
+    });
+
+    return {
+      kind: 'connected' as const,
+      installationId: args.installationId,
+    };
   },
 });
 

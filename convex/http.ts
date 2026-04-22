@@ -64,14 +64,28 @@ http.route({
         installationId,
       });
 
-      // Persist the installation record (upsert)
-      await ctx.runMutation(internal.github.saveInstallation, {
+      const saveResult:
+        | { kind: 'connected'; installationId: number }
+        | {
+            kind: 'conflict';
+            existingInstallationId: number;
+            existingAccountLogin: string;
+          } = await ctx.runMutation(internal.github.saveInstallation, {
         ownerTokenIdentifier,
         installationId,
         accountLogin: details.accountLogin,
         accountType: details.accountType,
         repositorySelection: details.repositorySelection,
       });
+
+      if (saveResult.kind === 'conflict') {
+        logInfo('http', 'github_callback_conflict', {
+          installationId,
+          existingInstallationId: saveResult.existingInstallationId,
+          existingAccountLogin: saveResult.existingAccountLogin,
+        });
+        return Response.redirect(`${siteUrl}?github_error=already_connected`, 302);
+      }
 
       logInfo('http', 'github_callback_completed', {
         installationId,

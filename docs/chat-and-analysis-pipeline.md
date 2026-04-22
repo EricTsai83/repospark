@@ -34,6 +34,7 @@ flowchart TD
   Generate[GenerateReply]
   Stream[AppendAssistantStreamChunk]
   Compact[CompactActiveStreamTail]
+  Usage[CaptureFinalUsageIfAvailable]
   Complete[finalizeAssistantReply]
 
   UserQuestion --> CreateJob
@@ -44,7 +45,8 @@ flowchart TD
   SelectChunks --> Generate
   Generate --> Stream
   Stream --> Compact
-  Compact --> Complete
+  Compact --> Usage
+  Usage --> Complete
 ```
 
 
@@ -129,6 +131,16 @@ The answer is no longer streamed directly into `messages.content`. Instead:
 3. older tail chunks are periodically compacted into `messageStreams.compactedContent`
 4. only the final durable write patches `messages.content`
 
+When the provider exposes finalized token usage, the pipeline also writes usage and estimated cost fields during finalization:
+
+- `messages.estimatedInputTokens`
+- `messages.estimatedOutputTokens`
+- `jobs.estimatedInputTokens`
+- `jobs.estimatedOutputTokens`
+- `jobs.estimatedCostUsd`
+
+If usage is unavailable, or the model is not present in the local pricing table, the reply still succeeds and those fields remain empty.
+
 When the flow completes, it updates:
 
 - the assistant message `status = completed`
@@ -165,6 +177,7 @@ This state model lets the UI faithfully represent four different states: created
 flowchart TD
   Request[RequestDeepAnalysis]
   CheckSandbox[CheckDeepModeAvailability]
+  ExtendTTL[ExtendSandboxTTL]
   CreateJob[CreateDeepAnalysisJob]
   RunNodeAction[RunDeepAnalysis]
   FocusedInspection[RunFocusedInspectionInSandbox]
@@ -172,7 +185,8 @@ flowchart TD
   Finish[CompleteJob]
 
   Request --> CheckSandbox
-  CheckSandbox --> CreateJob
+  CheckSandbox --> ExtendTTL
+  ExtendTTL --> CreateJob
   CreateJob --> RunNodeAction
   RunNodeAction --> FocusedInspection
   FocusedInspection --> PersistArtifact
@@ -190,6 +204,8 @@ flowchart TD
 - that the sandbox state allows deep mode
 
 If the sandbox is unavailable, the mutation throws immediately instead of creating an analysis workflow that cannot run.
+
+If validation succeeds, the mutation also extends `sandboxes.ttlExpiresAt` to at least 30 minutes in the future before queuing work. This reduces the race where the request is accepted but the sandbox gets swept before `runDeepAnalysis` starts.
 
 ### 2. Create the job
 

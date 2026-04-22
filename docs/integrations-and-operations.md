@@ -62,12 +62,14 @@ flowchart TD
   Callback[ConvexHttpCallback]
   State[githubOAuthStates]
   Installation[githubInstallations]
+  Conflict[already_connected redirect]
 
   User --> Frontend
   Frontend --> GitHub
   GitHub --> Callback
   Callback --> State
   Callback --> Installation
+  Callback --> Conflict
 ```
 
 
@@ -79,7 +81,10 @@ The actual flow is:
 3. GitHub redirects to `/api/github/callback` after installation.
 4. The callback consumes the state and resolves the owner.
 5. The callback fetches installation details from GitHub.
-6. `githubInstallations` is upserted into an active installation record.
+6. `saveInstallation` either:
+   - connects or refreshes the same installation
+   - or returns a conflict when the owner already has a different active installation
+7. conflict redirects use `?github_error=already_connected` instead of silently replacing the existing connection.
 
 ### Webhook flow
 
@@ -96,6 +101,8 @@ The webhook first verifies the payload with HMAC-SHA256 using `GITHUB_APP_WEBHOO
 - installation tokens are used instead of user personal access tokens
 - both callback and webhook handling are centralized in Convex `http.ts`
 - local `githubInstallations` records are a projection of GitHub permission state, not the sole source of truth
+- the current product invariant is **one active GitHub installation per owner**
+- a second different installation is treated as a product conflict, not as an implicit overwrite
 
 ## Daytona
 
@@ -124,6 +131,8 @@ The Convex `sandboxes` table stores the local projection of the Daytona runtime 
 - determine deep mode availability
 - display sandbox summaries
 - execute later cleanup flows
+
+When a user requests deep analysis, the request path now also extends the sandbox TTL before the background action is queued. This keeps the sandbox alive long enough for `runDeepAnalysis` to start and reduces request-versus-sweep races.
 
 The import pipeline now writes the Convex-side sandbox row before calling Daytona create:
 
@@ -208,6 +217,8 @@ OpenAI is currently used mainly for Quick chat response generation. If `OPENAI_A
 - OpenAI improves answer quality, but it is not the only requirement for product usability
 - the real repository knowledge source still lives in Convex artifacts and chunks
 - this fallback design preserves baseline usability even when the external model is unavailable
+- when finalized usage is available, chat writes token counts to `messages` and `jobs`, plus `estimatedCostUsd` on the job
+- cost estimation uses a small local pricing snapshot, so unknown models leave cost fields empty instead of breaking the reply path
 
 ## Rate Limiting And Lease Recovery
 

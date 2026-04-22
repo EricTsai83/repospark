@@ -13,6 +13,8 @@ import {
 } from './lib/rateLimit';
 import { getDeepModeAvailability } from './lib/sandboxAvailability';
 
+const DEEP_ANALYSIS_SANDBOX_TTL_EXTENSION_MS = 30 * 60_000;
+
 async function getActiveDeepAnalysisJob(
   ctx: MutationCtx,
   repositoryId: Id<'repositories'>,
@@ -34,6 +36,18 @@ async function getActiveDeepAnalysisJob(
   return [...queuedJobs, ...runningJobs].find(
     (job) => job.kind === 'deep_analysis' && isLeaseActive(job.leaseExpiresAt, now),
   );
+}
+
+async function extendSandboxTtlForDeepAnalysis(
+  ctx: MutationCtx,
+  sandboxId: Id<'sandboxes'>,
+  currentTtlExpiresAt: number,
+  now: number,
+) {
+  await ctx.db.patch(sandboxId, {
+    ttlExpiresAt: Math.max(currentTtlExpiresAt, now + DEEP_ANALYSIS_SANDBOX_TTL_EXTENSION_MS),
+    lastUsedAt: now,
+  });
 }
 
 export const listArtifacts = query({
@@ -85,6 +99,7 @@ export const requestDeepAnalysis = mutation({
 
     await consumeDeepAnalysisRateLimit(ctx, identity.tokenIdentifier);
     await consumeDaytonaGlobalRateLimit(ctx);
+    await extendSandboxTtlForDeepAnalysis(ctx, sandbox._id, sandbox.ttlExpiresAt, now);
 
     const jobId = await ctx.db.insert('jobs', {
       repositoryId: args.repositoryId,

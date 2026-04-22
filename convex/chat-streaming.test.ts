@@ -87,6 +87,9 @@ describe('chat streaming lifecycle', () => {
       assistantMessageId,
       jobId,
       finalDelta: 'done',
+      inputTokens: 1200,
+      outputTokens: 300,
+      costUsd: 0.00036,
     });
 
     const finalized = await t.run(async (ctx) => ({
@@ -101,9 +104,14 @@ describe('chat streaming lifecycle', () => {
 
     expect(finalized.message?.status).toBe('completed');
     expect(finalized.message?.content).toBe(`${compactedParts.join('')}done`);
+    expect(finalized.message?.estimatedInputTokens).toBe(1200);
+    expect(finalized.message?.estimatedOutputTokens).toBe(300);
     expect(finalized.stream).toBeNull();
     expect(finalized.tailChunks).toHaveLength(0);
     expect(finalized.job?.status).toBe('completed');
+    expect(finalized.job?.estimatedInputTokens).toBe(1200);
+    expect(finalized.job?.estimatedOutputTokens).toBe(300);
+    expect(finalized.job?.estimatedCostUsd).toBe(0.00036);
   });
 
   test('failAssistantReply preserves streamed content and removes stream state', async () => {

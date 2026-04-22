@@ -26,6 +26,7 @@ import {
   isLeaseActive,
   throwOperationAlreadyInProgress,
 } from './lib/rateLimit';
+import { estimateCostUsd } from './lib/openaiPricing';
 import { logWarn } from './lib/observability';
 
 type ReplyContext = {
@@ -577,8 +578,9 @@ export const generateAssistantReply = internalAction({
         return;
       }
 
+      const modelName = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
       const response = streamText({
-        model: openai(process.env.OPENAI_MODEL ?? 'gpt-4o-mini'),
+        model: openai(modelName),
         system: buildSystemPrompt(),
         prompt: buildUserPrompt(replyContext, userPrompt, relevantChunks),
       });
@@ -594,11 +596,31 @@ export const generateAssistantReply = internalAction({
         }
       }
 
+      let inputTokens: number | undefined;
+      let outputTokens: number | undefined;
+      let costUsd: number | undefined;
+      try {
+        const usage = await response.totalUsage;
+        inputTokens = usage.inputTokens;
+        outputTokens = usage.outputTokens;
+        costUsd = estimateCostUsd(modelName, inputTokens, outputTokens);
+      } catch (error) {
+        logWarn('chat', 'assistant_reply_usage_unavailable', {
+          assistantMessageId: args.assistantMessageId,
+          jobId: args.jobId,
+          model: modelName,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+
       await ctx.runMutation(internal.chat.finalizeAssistantReply, {
         threadId: args.threadId,
         assistantMessageId: args.assistantMessageId,
         jobId: args.jobId,
         finalDelta: pendingDelta,
+        inputTokens,
+        outputTokens,
+        costUsd,
       });
     } catch (error) {
       await ctx.runMutation(internal.chat.failAssistantReply, {
@@ -673,6 +695,9 @@ export const finalizeAssistantReply = internalMutation({
     assistantMessageId: v.id('messages'),
     jobId: v.id('jobs'),
     finalDelta: v.string(),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    costUsd: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const message = await ctx.db.get(args.assistantMessageId);
@@ -687,6 +712,8 @@ export const finalizeAssistantReply = internalMutation({
       content: finalContent,
       status: 'completed',
       errorMessage: undefined,
+      estimatedInputTokens: args.inputTokens,
+      estimatedOutputTokens: args.outputTokens,
     });
     await ctx.db.patch(args.threadId, {
       lastAssistantMessageAt: now,
@@ -698,6 +725,9 @@ export const finalizeAssistantReply = internalMutation({
       progress: 1,
       completedAt: now,
       outputSummary: 'Assistant reply generated.',
+      estimatedInputTokens: args.inputTokens,
+      estimatedOutputTokens: args.outputTokens,
+      estimatedCostUsd: args.costUsd,
       leaseExpiresAt: undefined,
     });
 

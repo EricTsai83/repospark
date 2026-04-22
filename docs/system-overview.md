@@ -104,6 +104,7 @@ That means Convex simultaneously serves as the application database, application
 - The chat flow creates a `chat` job, a user message, and an assistant placeholder message.
 - `internal.chat.generateAssistantReply` loads context and produces a reply either through OpenAI streaming or a heuristic fallback.
 - Durable chat history lives in `messages`, while active in-flight stream state lives in `messageStreams` and `messageStreamChunks`.
+- When provider usage is available, chat finalization also writes token counts to `messages` and `jobs`, plus an estimated job cost.
 - Deep analysis creates a `deep_analysis` job and runs focused inspection against the sandbox.
 
 ### 4. GitHub integration
@@ -112,6 +113,7 @@ That means Convex simultaneously serves as the application database, application
 - Both the callback and webhook are handled in Convex `http.ts`.
 - Installation state is stored in `githubInstallations`.
 - CSRF state is stored in `githubOAuthStates`.
+- The current product model allows at most one active installation per owner; a second different installation is treated as a conflict instead of replacing the first one.
 
 ### 5. Sandbox lifecycle
 
@@ -119,6 +121,7 @@ That means Convex simultaneously serves as the application database, application
 - The system reserves the Convex sandbox row before calling Daytona so cleanup can still find the resource if provisioning fails mid-flight.
 - After import completes, the system proactively stops the sandbox to save resources.
 - The sandbox can still be reawakened later for deep analysis.
+- Deep-analysis requests extend sandbox TTL before queuing the background action so a valid sandbox is less likely to expire between request acceptance and execution start.
 - Cron-based reconciliation handles both expired sandboxes and Daytona-side orphan resources, making sandbox cleanup a core reliability concern rather than a best-effort background task.
 
 ## Main User Flows
