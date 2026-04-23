@@ -1,0 +1,288 @@
+/// <reference types="vite/client" />
+
+import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { convexTest } from 'convex-test';
+import { internal } from './_generated/api';
+import schema from './schema';
+
+const modules = import.meta.glob('./**/*.ts');
+
+const { deleteSandboxMock, getRemoteSandboxDetailsMock } = vi.hoisted(() => ({
+  deleteSandboxMock: vi.fn(),
+  getRemoteSandboxDetailsMock: vi.fn(),
+}));
+
+vi.mock('./daytona', () => ({
+  deleteSandbox: deleteSandboxMock,
+  getRemoteSandboxDetails: getRemoteSandboxDetailsMock,
+}));
+
+async function seedRepository(t: ReturnType<typeof convexTest>, ownerTokenIdentifier: string) {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert('repositories', {
+      ownerTokenIdentifier,
+      sourceHost: 'github',
+      sourceUrl: `https://github.com/acme/${ownerTokenIdentifier}`,
+      sourceRepoFullName: `acme/${ownerTokenIdentifier}`,
+      sourceRepoOwner: 'acme',
+      sourceRepoName: ownerTokenIdentifier,
+      defaultBranch: 'main',
+      visibility: 'private',
+      accessMode: 'private',
+      importStatus: 'completed',
+      detectedLanguages: [],
+      packageManagers: [],
+      entrypoints: [],
+      fileCount: 0,
+    });
+  });
+}
+
+describe('daytona webhook processing', () => {
+  beforeEach(() => {
+    deleteSandboxMock.mockReset();
+    getRemoteSandboxDetailsMock.mockReset();
+  });
+
+  test('ingestValidatedEvent deduplicates repeated deliveries', async () => {
+    const t = convexTest(schema, modules);
+
+    const first = await t.mutation(internal.daytonaWebhooks.ingestValidatedEvent, {
+      dedupeKey: 'sandbox.created:remote-1:123:started',
+      eventType: 'sandbox.created',
+      remoteId: 'remote-1',
+      organizationId: 'org-1',
+      eventTimestamp: 123,
+      normalizedState: 'started',
+      payloadJson: '{"event":"sandbox.created"}',
+    });
+    const second = await t.mutation(internal.daytonaWebhooks.ingestValidatedEvent, {
+      dedupeKey: 'sandbox.created:remote-1:123:started',
+      eventType: 'sandbox.created',
+      remoteId: 'remote-1',
+      organizationId: 'org-1',
+      eventTimestamp: 123,
+      normalizedState: 'started',
+      payloadJson: '{"event":"sandbox.created"}',
+    });
+
+    expect(first.kind).toBe('enqueued');
+    expect(second.kind).toBe('duplicate');
+
+    const storedEvents = await t.run(async (ctx) => {
+      return await ctx.db
+        .query('daytonaWebhookEvents')
+        .withIndex('by_dedupeKey', (q) => q.eq('dedupeKey', 'sandbox.created:remote-1:123:started'))
+        .take(10);
+    });
+    expect(storedEvents).toHaveLength(1);
+  });
+
+  test('processEvent updates known sandbox projection and coarse sandbox state', async () => {
+    const t = convexTest(schema, modules);
+    const repositoryId = await seedRepository(t, 'user|known-sandbox');
+    const now = Date.now();
+
+    const ids = await t.run(async (ctx) => {
+      const sandboxId = await ctx.db.insert('sandboxes', {
+        repositoryId,
+        ownerTokenIdentifier: 'user|known-sandbox',
+        provider: 'daytona',
+        sourceAdapter: 'git_clone',
+        remoteId: 'remote-known',
+        status: 'ready',
+        workDir: '/workspace',
+        repoPath: '/workspace/repo',
+        cpuLimit: 2,
+        memoryLimitGiB: 4,
+        diskLimitGiB: 10,
+        ttlExpiresAt: now + 60_000,
+        autoStopIntervalMinutes: 10,
+        autoArchiveIntervalMinutes: 60,
+        autoDeleteIntervalMinutes: 120,
+        networkBlockAll: false,
+      });
+      const eventId = await ctx.db.insert('daytonaWebhookEvents', {
+        dedupeKey: 'sandbox.state.updated:remote-known',
+        eventType: 'sandbox.state.updated',
+        remoteId: 'remote-known',
+        organizationId: 'org-1',
+        eventTimestamp: now,
+        normalizedState: 'stopped',
+        payloadJson: '{"event":"sandbox.state.updated"}',
+        status: 'received',
+        attemptCount: 0,
+        nextAttemptAt: now,
+        receivedAt: now,
+        retentionExpiresAt: now + 1_000,
+      });
+      return { sandboxId, eventId };
+    });
+
+    const result = await t.mutation(internal.daytonaWebhooks.processEvent, {
+      eventId: ids.eventId,
+    });
+
+    expect(result.kind).toBe('processed_known');
+
+    const state = await t.run(async (ctx) => ({
+      sandbox: await ctx.db.get(ids.sandboxId),
+      event: await ctx.db.get(ids.eventId),
+      observation: await ctx.db
+        .query('sandboxRemoteObservations')
+        .withIndex('by_remoteId', (q) => q.eq('remoteId', 'remote-known'))
+        .unique(),
+    }));
+
+    expect(state.sandbox?.status).toBe('stopped');
+    expect(state.event?.status).toBe('processed');
+    expect(state.observation?.discoveryStatus).toBe('known');
+    expect(state.observation?.lastObservedState).toBe('stopped');
+  });
+
+  test('processEvent ignores stale out-of-order events', async () => {
+    const t = convexTest(schema, modules);
+    const repositoryId = await seedRepository(t, 'user|stale-event');
+    const newerTimestamp = Date.now();
+    const olderTimestamp = newerTimestamp - 10_000;
+
+    const ids = await t.run(async (ctx) => {
+      await ctx.db.insert('sandboxes', {
+        repositoryId,
+        ownerTokenIdentifier: 'user|stale-event',
+        provider: 'daytona',
+        sourceAdapter: 'git_clone',
+        remoteId: 'remote-stale',
+        status: 'ready',
+        workDir: '/workspace',
+        repoPath: '/workspace/repo',
+        cpuLimit: 2,
+        memoryLimitGiB: 4,
+        diskLimitGiB: 10,
+        ttlExpiresAt: newerTimestamp + 60_000,
+        autoStopIntervalMinutes: 10,
+        autoArchiveIntervalMinutes: 60,
+        autoDeleteIntervalMinutes: 120,
+        networkBlockAll: false,
+      });
+      await ctx.db.insert('sandboxRemoteObservations', {
+        remoteId: 'remote-stale',
+        organizationId: 'org-1',
+        lastObservedState: 'started',
+        lastObservedAt: newerTimestamp,
+        lastWebhookAt: newerTimestamp,
+        lastAcceptedEventAt: newerTimestamp,
+        discoveryStatus: 'known',
+        firstSeenAt: newerTimestamp,
+      });
+      const eventId = await ctx.db.insert('daytonaWebhookEvents', {
+        dedupeKey: 'sandbox.state.updated:remote-stale',
+        eventType: 'sandbox.state.updated',
+        remoteId: 'remote-stale',
+        organizationId: 'org-1',
+        eventTimestamp: olderTimestamp,
+        normalizedState: 'stopped',
+        payloadJson: '{"event":"sandbox.state.updated"}',
+        status: 'received',
+        attemptCount: 0,
+        nextAttemptAt: olderTimestamp,
+        receivedAt: olderTimestamp,
+        retentionExpiresAt: olderTimestamp + 1_000,
+      });
+      return { eventId };
+    });
+
+    const result = await t.mutation(internal.daytonaWebhooks.processEvent, {
+      eventId: ids.eventId,
+    });
+
+    expect(result.kind).toBe('stale_ignored');
+
+    const state = await t.run(async (ctx) => ({
+      event: await ctx.db.get(ids.eventId),
+      observation: await ctx.db
+        .query('sandboxRemoteObservations')
+        .withIndex('by_remoteId', (q) => q.eq('remoteId', 'remote-stale'))
+        .unique(),
+    }));
+
+    expect(state.event?.status).toBe('ignored');
+    expect(state.observation?.lastObservedState).toBe('started');
+    expect(state.observation?.lastAcceptedEventAt).toBe(newerTimestamp);
+  });
+
+  test('confirmUnknownRemote deletes confirmed orphan sandboxes', async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert('sandboxRemoteObservations', {
+        remoteId: 'remote-orphan',
+        organizationId: 'org-1',
+        lastObservedState: 'started',
+        lastObservedAt: now - 20_000,
+        lastWebhookAt: now - 20_000,
+        lastAcceptedEventAt: now - 20_000,
+        discoveryStatus: 'unknown_pending_confirmation',
+        firstSeenAt: now - 20_000,
+        confirmAfterAt: now - 1_000,
+      });
+    });
+
+    getRemoteSandboxDetailsMock.mockResolvedValue({
+      exists: true,
+      remoteId: 'remote-orphan',
+      organizationId: 'org-1',
+      state: 'started',
+    });
+    deleteSandboxMock.mockResolvedValue(undefined);
+
+    const result = await t.action(internal.daytonaWebhooksNode.confirmUnknownRemote, {
+      remoteId: 'remote-orphan',
+    });
+
+    expect(result.kind).toBe('deleted');
+    expect(deleteSandboxMock).toHaveBeenCalledWith('remote-orphan');
+
+    const observation = await t.query(internal.daytonaWebhooks.getObservationByRemoteId, {
+      remoteId: 'remote-orphan',
+    });
+    expect(observation?.discoveryStatus).toBe('deleted');
+    expect(observation?.deletedAt).toBeTypeOf('number');
+  });
+
+  test('cleanupOldWebhookEvents deletes expired inbox rows', async () => {
+    const t = convexTest(schema, modules);
+    const now = Date.now();
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert('daytonaWebhookEvents', {
+        dedupeKey: 'expired-event',
+        eventType: 'sandbox.created',
+        remoteId: 'remote-expired',
+        organizationId: 'org-1',
+        eventTimestamp: now - 10_000,
+        normalizedState: 'started',
+        payloadJson: '{"event":"sandbox.created"}',
+        status: 'processed',
+        attemptCount: 1,
+        nextAttemptAt: now - 10_000,
+        receivedAt: now - 10_000,
+        processedAt: now - 9_000,
+        retentionExpiresAt: now - 1_000,
+      });
+    });
+
+    const result = await t.mutation(internal.daytonaWebhooks.cleanupOldWebhookEvents, {});
+
+    expect(result.deletedCount).toBe(1);
+
+    const remaining = await t.run(async (ctx) => {
+      return await ctx.db
+        .query('daytonaWebhookEvents')
+        .withIndex('by_dedupeKey', (q) => q.eq('dedupeKey', 'expired-event'))
+        .unique();
+    });
+    expect(remaining).toBeNull();
+  });
+});

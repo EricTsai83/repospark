@@ -42,6 +42,15 @@ export type ListedSandbox = {
   createdAt?: string;
 };
 
+export type RemoteSandboxDetails = {
+  exists: boolean;
+  remoteId: string;
+  organizationId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  state: 'started' | 'stopped' | 'archived' | 'destroyed' | 'error' | 'unknown';
+};
+
 export async function provisionSandbox(options: CreateSandboxOptions): Promise<SandboxProvisionResult> {
   const daytona = createDaytonaClient();
   const sandboxName = buildSandboxName({
@@ -151,6 +160,28 @@ export async function getSandboxState(
   } catch {
     // If the sandbox can't be retrieved at all it has been destroyed/deleted
     return 'destroyed';
+  }
+}
+
+export async function getRemoteSandboxDetails(remoteId: string): Promise<RemoteSandboxDetails> {
+  try {
+    const sandbox = await getSandbox(remoteId);
+    await sandbox.refreshData();
+
+    return {
+      exists: true,
+      remoteId: sandbox.id,
+      organizationId: sandbox.organizationId,
+      createdAt: sandbox.createdAt,
+      updatedAt: sandbox.updatedAt,
+      state: normalizeRemoteSandboxState(sandbox.state),
+    };
+  } catch {
+    return {
+      exists: false,
+      remoteId,
+      state: 'destroyed',
+    };
   }
 }
 
@@ -341,4 +372,30 @@ function readNumberEnv(name: string, fallback: number) {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeRemoteSandboxState(
+  state: string | undefined,
+): 'started' | 'stopped' | 'archived' | 'destroyed' | 'error' | 'unknown' {
+  if (!state) {
+    return 'unknown';
+  }
+
+  const normalized = state.toLowerCase();
+  if (normalized === 'started') {
+    return 'started';
+  }
+  if (normalized === 'stopped') {
+    return 'stopped';
+  }
+  if (normalized === 'archived') {
+    return 'archived';
+  }
+  if (normalized === 'destroyed' || normalized === 'deleted') {
+    return 'destroyed';
+  }
+  if (normalized === 'error' || normalized === 'failed') {
+    return 'error';
+  }
+  return 'unknown';
 }

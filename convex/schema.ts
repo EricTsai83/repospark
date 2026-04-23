@@ -41,6 +41,32 @@ const sandboxStatus = v.union(
   v.literal('failed'),
 );
 
+const daytonaWebhookEventStatus = v.union(
+  v.literal('received'),
+  v.literal('processing'),
+  v.literal('processed'),
+  v.literal('ignored'),
+  v.literal('retryable_error'),
+  v.literal('dead_letter'),
+);
+
+const normalizedRemoteSandboxState = v.union(
+  v.literal('started'),
+  v.literal('stopped'),
+  v.literal('archived'),
+  v.literal('destroyed'),
+  v.literal('error'),
+  v.literal('unknown'),
+);
+
+const sandboxRemoteDiscoveryStatus = v.union(
+  v.literal('known'),
+  v.literal('unknown_pending_confirmation'),
+  v.literal('confirmed_orphan'),
+  v.literal('deleted'),
+  v.literal('ignored'),
+);
+
 const artifactKind = v.union(
   v.literal('manifest'),
   v.literal('readme_summary'),
@@ -173,6 +199,47 @@ export default defineSchema({
     .index('by_threadId', ['threadId'])
     .index('by_status_and_leaseExpiresAt', ['status', 'leaseExpiresAt'])
     .index('by_ownerTokenIdentifier', ['ownerTokenIdentifier']),
+
+  daytonaWebhookEvents: defineTable({
+    providerDeliveryId: v.optional(v.string()),
+    dedupeKey: v.string(),
+    eventType: v.union(v.literal('sandbox.created'), v.literal('sandbox.state.updated')),
+    remoteId: v.string(),
+    organizationId: v.string(),
+    eventTimestamp: v.number(),
+    normalizedState: v.optional(normalizedRemoteSandboxState),
+    payloadJson: v.string(),
+    status: daytonaWebhookEventStatus,
+    attemptCount: v.number(),
+    nextAttemptAt: v.number(),
+    processingLeaseExpiresAt: v.optional(v.number()),
+    receivedAt: v.number(),
+    processedAt: v.optional(v.number()),
+    lastErrorMessage: v.optional(v.string()),
+    retentionExpiresAt: v.number(),
+  })
+    .index('by_dedupeKey', ['dedupeKey'])
+    .index('by_remoteId', ['remoteId'])
+    .index('by_status_and_nextAttemptAt', ['status', 'nextAttemptAt'])
+    .index('by_status_and_processingLeaseExpiresAt', ['status', 'processingLeaseExpiresAt'])
+    .index('by_retentionExpiresAt', ['retentionExpiresAt']),
+
+  sandboxRemoteObservations: defineTable({
+    remoteId: v.string(),
+    sandboxId: v.optional(v.id('sandboxes')),
+    repositoryId: v.optional(v.id('repositories')),
+    organizationId: v.string(),
+    lastObservedState: normalizedRemoteSandboxState,
+    lastObservedAt: v.number(),
+    lastWebhookAt: v.number(),
+    lastAcceptedEventAt: v.number(),
+    discoveryStatus: sandboxRemoteDiscoveryStatus,
+    firstSeenAt: v.number(),
+    confirmAfterAt: v.optional(v.number()),
+    deletedAt: v.optional(v.number()),
+  })
+    .index('by_remoteId', ['remoteId'])
+    .index('by_discoveryStatus_and_confirmAfterAt', ['discoveryStatus', 'confirmAfterAt']),
 
   analysisArtifacts: defineTable({
     repositoryId: v.id('repositories'),

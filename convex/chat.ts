@@ -42,14 +42,9 @@ type ReplyContext = {
 
 type DbCtx = Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>;
 
-const STALE_CHAT_JOB_ERROR_MESSAGE =
-  'The assistant reply stalled and was automatically marked as failed.';
+const STALE_CHAT_JOB_ERROR_MESSAGE = 'The assistant reply stalled and was automatically marked as failed.';
 
-async function getActiveChatJobForThread(
-  ctx: MutationCtx,
-  threadId: Id<'threads'>,
-  now: number,
-) {
+async function getActiveChatJobForThread(ctx: MutationCtx, threadId: Id<'threads'>, now: number) {
   const jobs = await ctx.db
     .query('jobs')
     .withIndex('by_threadId', (q) => q.eq('threadId', threadId))
@@ -578,7 +573,7 @@ export const generateAssistantReply = internalAction({
         return;
       }
 
-      const modelName = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
+      const modelName = process.env.OPENAI_MODEL ?? 'gpt-5.4-mini';
       const response = streamText({
         model: openai(modelName),
         system: buildSystemPrompt(),
@@ -802,9 +797,7 @@ export const recoverStaleChatJob = internalMutation({
     const assistantMessage = jobMessages.find((entry) => entry.role === 'assistant');
     const stream = await getMessageStreamByJobId(ctx, args.jobId);
     const streamSnapshot =
-      assistantMessage && stream
-        ? await loadMessageStreamSnapshot(ctx, assistantMessage._id)
-        : null;
+      assistantMessage && stream ? await loadMessageStreamSnapshot(ctx, assistantMessage._id) : null;
 
     if (assistantMessage) {
       await ctx.db.patch(assistantMessage._id, {
@@ -837,11 +830,7 @@ function buildSystemPrompt() {
   ].join(' ');
 }
 
-async function loadRecentMessages(
-  ctx: Pick<QueryCtx, 'db'>,
-  threadId: Id<'threads'>,
-  limit: number,
-) {
+async function loadRecentMessages(ctx: Pick<QueryCtx, 'db'>, threadId: Id<'threads'>, limit: number) {
   const recentMessages = await ctx.db
     .query('messages')
     .withIndex('by_threadId', (q) => q.eq('threadId', threadId))
@@ -851,11 +840,7 @@ async function loadRecentMessages(
   return recentMessages.reverse();
 }
 
-async function loadCandidateChunks(
-  ctx: Pick<QueryCtx, 'db'>,
-  importId: Id<'imports'>,
-  question: string,
-) {
+async function loadCandidateChunks(ctx: Pick<QueryCtx, 'db'>, importId: Id<'imports'>, question: string) {
   const headCount = Math.ceil(CHAT_BASELINE_CHUNKS / 2);
   const tailCount = CHAT_BASELINE_CHUNKS - headCount;
   const [headChunks, tailChunks] = await Promise.all([
@@ -1018,9 +1003,7 @@ function tokenizeQuestion(question: string) {
         .split(/[^a-z0-9_]+/g)
         .filter(
           (token) =>
-            token.length > 0 &&
-            !QUESTION_STOPWORDS.has(token) &&
-            (token.length > 2 || SHORT_TECH_TOKENS.has(token)),
+            token.length > 0 && !QUESTION_STOPWORDS.has(token) && (token.length > 2 || SHORT_TECH_TOKENS.has(token)),
         ),
     ),
   );

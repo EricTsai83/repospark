@@ -99,6 +99,28 @@ If the system sees a Daytona sandbox that does not yet have a matching Convex ro
 
 That is why orphan deletion should only happen after a safety window and a second confirmation step.
 
+## Why Faster Signals Matter
+
+It helps to think about the system as two sides:
+
+- Daytona has the real sandbox
+- Convex has our local record of that sandbox
+
+Those two sides are allowed to be briefly out of sync.
+
+For example:
+
+- Daytona may already know that a sandbox stopped
+- Convex may still show the older state until a later check
+
+That gap is the main reason webhook ingestion is useful. The webhook does not make cleanup "more correct" than reconciliation. It makes cleanup react sooner.
+
+That matters because earlier awareness can mean:
+
+- less time spent showing stale sandbox status
+- less time spent waiting to detect orphan resources
+- less time paying for resources that should already be reclaimed
+
 ## Main Failure Modes
 
 ### Daytona Create Succeeds, But Convex Does Not Finish Attachment
@@ -199,16 +221,15 @@ The current design tries to preserve these invariants:
 - unknown Daytona sandboxes should only be deleted after a confirmation window
 - cron-based reconciliation must remain in place even if faster mechanisms are added later
 
-## Future Hardening Direction
+## Webhook-Enhanced Convergence
 
-The most natural next step is to add Daytona webhook ingestion for sandbox lifecycle events.
+Repospark now adds Daytona webhook ingestion on top of the earlier three cleanup layers.
 
-That would improve convergence speed, but it should be treated as an enhancement layer rather than a replacement for cron-based reconciliation.
-
-The recommended shape is:
+The webhook layer improves convergence speed, but it still does not replace reconciliation. The current shape is:
 
 - webhook endpoint for Daytona sandbox events
-- event journal for idempotency and observability
+- `daytonaWebhookEvents` as a durable inbox for idempotency, retries, and debugging
+- `sandboxRemoteObservations` as a provider-state projection separated from the main `sandboxes` table
 - delayed confirmation for unknown remote sandbox events
 - existing cron jobs kept as the final backstop
 
@@ -217,7 +238,7 @@ In other words:
 - webhooks improve reaction time
 - reconciliation preserves correctness
 
-The system should keep both.
+The system still keeps both.
 
 ## What This Document Does Not Cover
 

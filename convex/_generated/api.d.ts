@@ -13,6 +13,8 @@ import type * as analysisNode from "../analysisNode.js";
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
 import type * as daytona from "../daytona.js";
+import type * as daytonaWebhooks from "../daytonaWebhooks.js";
+import type * as daytonaWebhooksNode from "../daytonaWebhooksNode.js";
 import type * as github from "../github.js";
 import type * as githubAppNode from "../githubAppNode.js";
 import type * as githubCheck from "../githubCheck.js";
@@ -44,6 +46,8 @@ declare const fullApi: ApiFromModules<{
   chat: typeof chat;
   crons: typeof crons;
   daytona: typeof daytona;
+  daytonaWebhooks: typeof daytonaWebhooks;
+  daytonaWebhooksNode: typeof daytonaWebhooksNode;
   github: typeof github;
   githubAppNode: typeof githubAppNode;
   githubCheck: typeof githubCheck;

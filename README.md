@@ -1,52 +1,228 @@
-# Welcome to your Convex + React (Vite) + WorkOS AuthKit app
+# RepoSpark
 
-This is a [Convex](https://convex.dev/) project created with [`npm create convex`](https://www.npmjs.com/package/create-convex).
+Ask the repo, not the internet.
 
-After the initial setup (<2 minutes) you'll have a working full-stack app using:
+RepoSpark is a repository-centered architecture analysis app. A user signs in with WorkOS, connects a GitHub App installation, imports a repository into a Daytona sandbox, indexes the codebase into Convex, and then explores the project through two complementary analysis modes:
 
-- Convex as your backend (database, server logic)
-- [React](https://react.dev/) as your frontend (web page interactivity)
-- [Vite](https://vitest.dev/) for optimized web hosting
-- [Tailwind](https://tailwindcss.com/) for building great looking accessible UI
-- [WorkOS AuthKit](https://workos.com/docs/authkit) for authentication
+- `Quick chat`: grounded answers from indexed artifacts, code chunks, and recent thread history
+- `Deep analysis`: focused inspection against a live sandbox when the repository needs deeper validation
 
-## Get started
+The app is built as a single React frontend plus a Convex backend. Convex handles database storage, backend logic, background jobs, cron tasks, and HTTP endpoints, so there is no separate Express or Nest service.
 
-If you just cloned this codebase and didn't use `npm create convex`, run:
+## Status
 
+RepoSpark is an early-access open source project. Core repository import, chat, artifact generation, sync, and sandbox lifecycle flows are implemented. Sandbox reliability and Daytona webhook reconciliation are still active areas of iteration.
+
+## Core capabilities
+
+- Import GitHub repositories through a GitHub App instead of personal access tokens
+- Index repository structure, files, chunks, and long-lived analysis artifacts
+- Ask grounded questions about architecture, data flow, and risk areas
+- Run deep analysis in a live Daytona sandbox when indexed data is not enough
+- Persist threads, messages, jobs, and analysis artifacts for later review
+- Sync imported repositories against newer remote commits
+- Reconcile sandbox lifecycle with a mix of request-path cleanup, webhooks, and cron sweeps
+
+## How it works
+
+1. The user signs in with WorkOS AuthKit.
+2. The user connects a GitHub App installation.
+3. RepoSpark verifies repository access and creates an import workflow.
+4. A Daytona sandbox is provisioned and the repository is cloned.
+5. The import pipeline scans the repository and writes summaries, artifacts, files, and chunks into Convex.
+6. The user can ask questions in `Quick chat` or run `Deep analysis`.
+7. Later syncs refresh the active repository snapshot without mixing old and new import data.
+
+## Architecture
+
+### Frontend
+
+- React 19
+- Vite 7
+- React Router 7
+- Tailwind CSS 4
+- shadcn/ui and Radix primitives
+
+### Backend
+
+- Convex queries, mutations, actions, internal actions, HTTP actions, and cron jobs
+- Convex as the app database, backend runtime, scheduler, and integration entrypoint
+
+### External integrations
+
+- WorkOS AuthKit for browser-side sign-in
+- GitHub App for repository authorization and installation lifecycle
+- Daytona for repository sandboxes and deep inspection
+- OpenAI for chat generation, with a heuristic fallback when no API key is configured
+
+## Project structure
+
+```text
+.
+├── src/        # React app, routes, layout, and UI
+├── convex/     # Convex schema, functions, actions, HTTP endpoints, and crons
+├── docs/       # System design and architecture documentation
+├── public/     # Static assets
+└── .env.example
 ```
+
+## Prerequisites
+
+Before running the app locally, make sure you have:
+
+- Node.js and npm
+- A Convex deployment
+- A WorkOS application
+- A GitHub App with installation access to the repositories you want to import
+- A Daytona account and API key
+- An OpenAI API key if you want model-backed chat responses
+
+## Local development
+
+### 1. Install dependencies
+
+```bash
 npm install
+```
+
+### 2. Configure frontend environment variables
+
+Copy `.env.example` to `.env` and fill in the browser-exposed values:
+
+```bash
+cp .env.example .env
+```
+
+Required frontend variables:
+
+- `VITE_CONVEX_URL`
+- `VITE_WORKOS_CLIENT_ID`
+- `VITE_WORKOS_REDIRECT_URI`
+
+`env.ts` validates these values at build time.
+
+### 3. Configure Convex runtime environment variables
+
+Do not keep backend secrets only in `.env`. Set them in the Convex environment with `npx convex env set` or in the Convex dashboard.
+
+Required or commonly used Convex runtime variables:
+
+- WorkOS
+  - `WORKOS_CLIENT_ID`
+- GitHub App
+  - `GITHUB_APP_ID`
+  - `GITHUB_APP_SLUG`
+  - `GITHUB_APP_PRIVATE_KEY`
+  - `GITHUB_APP_WEBHOOK_SECRET`
+  - `SITE_URL`
+- OpenAI
+  - `OPENAI_API_KEY`
+  - `OPENAI_MODEL`
+- Daytona
+  - `DAYTONA_API_KEY`
+  - `DAYTONA_API_URL`
+  - `DAYTONA_TARGET`
+  - `DAYTONA_WEBHOOK_TOKEN`
+  - `DAYTONA_WEBHOOK_ORGANIZATION_ID`
+  - `DAYTONA_AUTO_STOP_MINUTES`
+  - `DAYTONA_AUTO_ARCHIVE_MINUTES`
+  - `DAYTONA_AUTO_DELETE_MINUTES`
+  - `DAYTONA_CPU_LIMIT`
+  - `DAYTONA_MEMORY_GIB`
+  - `DAYTONA_DISK_GIB`
+  - `DAYTONA_NETWORK_ALLOW_LIST`
+
+Rate limit and lease overrides are also supported in Convex runtime env:
+
+- `RATE_LIMIT_IMPORT_PER_HOUR`
+- `RATE_LIMIT_DEEP_ANALYSIS_PER_HOUR`
+- `RATE_LIMIT_CHAT_PER_MINUTE`
+- `RATE_LIMIT_CHAT_BURST_CAPACITY`
+- `RATE_LIMIT_GLOBAL_CHAT_PER_MINUTE`
+- `RATE_LIMIT_GLOBAL_CHAT_BURST_CAPACITY`
+- `RATE_LIMIT_DAYTONA_GLOBAL_PER_HOUR`
+- `CHAT_JOB_LEASE_MS`
+- `DEEP_ANALYSIS_JOB_LEASE_MS`
+
+### 4. Start the app
+
+```bash
 npm run dev
 ```
 
-If you're reading this README on GitHub and want to use this template, run:
+This runs the frontend and backend together:
 
-```
-npm create convex@latest -- -t react-vite-workos-authkit
-```
+- `vite --open`
+- `convex dev`
 
-Then:
+The `predev` hook also waits for Convex to be ready and opens the Convex dashboard.
 
-1. Sign up for [WorkOS](https://workos.com/) and create an application
-2. Copy `.env.local.example` to `.env.local` and configure:
-   - `VITE_WORKOS_CLIENT_ID`: Your WorkOS client ID
-   - `VITE_WORKOS_REDIRECT_URI`: Your redirect URI (default: http://localhost:5173/callback)
-   - `VITE_CONVEX_URL`: Your Convex deployment URL
-3. Configure your WorkOS client ID as `WORKOS_CLIENT_ID` in your Convex dashboard environment variables
+## Integration endpoints
 
-For user management and webhook integration with WorkOS, check out the [WorkOS documentation](https://workos.com/docs/user-management).
+When wiring external services, these are the important routes:
 
-## Learn more
+- WorkOS redirect URI: usually `http://localhost:5173/callback` for local development
+- GitHub App callback: `https://<your-convex-site>/api/github/callback`
+- GitHub App webhook: `https://<your-convex-site>/api/github/webhook`
+- Daytona webhook: `https://<your-convex-site>/api/daytona/webhook?token=<DAYTONA_WEBHOOK_TOKEN>`
 
-To learn more about developing your project with Convex, check out:
+Keep `DAYTONA_WEBHOOK_TOKEN` high-entropy and secret. `DAYTONA_WEBHOOK_ORGANIZATION_ID` can be used as an additional allowlist check.
 
-- The [Tour of Convex](https://docs.convex.dev/get-started) for a thorough introduction to Convex principles.
-- The rest of [Convex docs](https://docs.convex.dev/) to learn about all Convex features.
-- [Stack](https://stack.convex.dev/) for in-depth articles on advanced topics.
+## Available scripts
 
-## Join the community
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Run frontend and Convex backend in parallel |
+| `npm run dev:frontend` | Start the Vite frontend |
+| `npm run dev:backend` | Start `convex dev` |
+| `npm run build` | Type-check and build the frontend |
+| `npm run typecheck` | Run the app TypeScript build |
+| `npm run typecheck:convex` | Type-check Convex code only |
+| `npm run lint` | Run type checks and ESLint |
+| `npm test` | Run Vitest |
+| `npm run preview` | Preview the production build |
+| `npm run format` | Format the repo with Prettier |
 
-Join thousands of developers building full-stack apps with Convex:
+## Authentication and access model
 
-- Join the [Convex Discord community](https://convex.dev/community) to get help in real-time.
-- Follow [Convex on GitHub](https://github.com/get-convex/), star and contribute to the open-source implementation of Convex.
+- Users sign in through WorkOS AuthKit in the browser.
+- The frontend passes the WorkOS access token into Convex.
+- Convex validates that token as a custom JWT.
+- Repository access is enforced through GitHub App installation state, not user-provided personal tokens.
+- Most backend flows derive the current owner from authenticated identity and verify ownership server-side.
+
+## Sandbox and analysis model
+
+- Every import creates a snapshot-oriented workflow instead of mutating repository knowledge in place.
+- Indexed knowledge is persisted in Convex as repository summaries, artifacts, files, and chunks.
+- `Quick chat` uses that indexed knowledge layer.
+- `Deep analysis` depends on a usable Daytona sandbox and stores its output back as a reusable artifact.
+- Cleanup and reconciliation rely on cron jobs plus webhook-driven convergence so Daytona resources do not drift too far from Convex state.
+
+## Recommended reading
+
+Start with the system design docs in `docs/`:
+
+1. `docs/system-overview.md`
+2. `docs/domain-and-data-model.md`
+3. `docs/auth-and-access.md`
+4. `docs/repository-lifecycle.md`
+5. `docs/chat-and-analysis-pipeline.md`
+6. `docs/integrations-and-operations.md`
+7. `docs/orphan-resource-handling.md`
+
+The document index lives in `docs/README.md`.
+
+## Deployment model
+
+The current deployment model is intentionally simple:
+
+- frontend: static Vite build
+- backend: Convex cloud
+- external services: WorkOS, GitHub, Daytona, and OpenAI
+
+There is no separate always-on custom API server in front of the backend.
+
+## License
+
+MIT

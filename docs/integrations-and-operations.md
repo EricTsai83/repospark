@@ -152,16 +152,64 @@ After import finishes, the system stops the sandbox instead of deleting it immed
 
 This is Repospark's trade-off between cost and functionality.
 
+### Why Daytona webhook exists
+
+In plain language, Daytona knows the real sandbox state first, while Repospark only knows what it has already recorded.
+
+That creates a normal delay:
+
+- Daytona may already know that a sandbox was created
+- Daytona may already know that it stopped
+- Daytona may already know that it was archived or deleted
+- Repospark may still be waiting for the next cleanup or reconciliation pass
+
+If the system only checks later, it is still correct eventually, but it reacts more slowly and can leave orphan resources around longer than necessary.
+
+The Daytona webhook exists to shorten that delay. It lets Daytona notify Repospark as soon as something changes.
+
+That does **not** mean the webhook replaces scheduled reconciliation. It only means:
+
+- webhook gives faster notice
+- cron keeps the system safe when notice is late or missing
+
+### Daytona webhook convergence
+
+Repospark now also accepts Daytona sandbox lifecycle webhooks at `/api/daytona/webhook`.
+
+The current flow is:
+
+```mermaid
+flowchart TD
+  A[Daytona webhook] --> B[Convex HTTP ingress]
+  B --> C[Token and organization verification]
+  C --> D[daytonaWebhookEvents inbox]
+  D --> E[Background processing]
+  E --> F[sandboxRemoteObservations projection]
+  F --> G[Patch sandboxes only on coarse lifecycle changes]
+  E --> H[Delayed confirm for unknown remotes]
+  H --> I[Delete confirmed orphan]
+```
+
+The webhook path is intentionally layered:
+
+- the HTTP route stays thin and only verifies plus ingests
+- `daytonaWebhookEvents` acts as the durable inbox for retries and debugging
+- `sandboxRemoteObservations` stores the latest Daytona-side view without turning the main `sandboxes` table into a high-churn event log
+- unknown remote sandboxes are never deleted immediately; they first wait through a safety window and a second confirmation step
+
+This gives the system faster convergence without turning webhook delivery into a single point of correctness.
+
 ## Sandbox Cleanup And Cron
 
 ### Orphan resource handling strategy
 
 Handling orphan Daytona resources is treated as a first-class reliability and cost-control concern rather than a rare edge case.
 
-The current system uses three layers:
+The current system uses four layers:
 
 - prevention: reserve the Convex sandbox row before calling Daytona create
 - request-path correction: schedule cleanup jobs when a known sandbox fails or a repository is deleted
+- webhook-driven convergence: ingest Daytona lifecycle events into a durable inbox and remote-state projection
 - background reconciliation: periodically compare Convex state and Daytona reality, including remote sandboxes that have no matching DB row
 
 This layered approach exists because sandbox lifecycle crosses two systems. Neither a single request path nor a single cron run can guarantee perfect cleanup on its own.
@@ -205,6 +253,15 @@ The action:
 - deletes old unmatched sandboxes from Daytona
 
 This is the backstop for failures that happen after Daytona create succeeds but before Convex can attach the remote metadata.
+
+### Webhook backlog repair and retention cleanup
+
+Webhook delivery is not assumed to be perfect. Repospark therefore also runs two maintenance loops:
+
+- `repairDaytonaWebhookBacklog`: re-schedules inbox rows that are still `received`, are in `retryable_error`, or were left `processing` past their lease
+- `cleanupOldDaytonaWebhookEvents`: deletes old inbox rows after the retention window so the durable inbox does not grow forever
+
+These jobs make the webhook path durable instead of best-effort.
 
 ## OpenAI
 
@@ -317,6 +374,8 @@ These values must exist in the Convex environment, not frontend `.env.local`:
 - `DAYTONA_API_KEY`
 - `DAYTONA_API_URL`
 - `DAYTONA_TARGET`
+- `DAYTONA_WEBHOOK_TOKEN`
+- `DAYTONA_WEBHOOK_ORGANIZATION_ID`
 - `RATE_LIMIT_IMPORT_PER_HOUR`
 - `RATE_LIMIT_DEEP_ANALYSIS_PER_HOUR`
 - `RATE_LIMIT_CHAT_PER_MINUTE`
@@ -361,7 +420,7 @@ In other words, Repospark does not require another always-on API server. Convex 
 ### Known limitations
 
 - Both webhook and callback handling depend on Convex HTTP routes, so if integrations grow later, the system may need a clearer integration-module split.
-- The current Daytona integration still relies on request-path cleanup plus cron-based reconciliation. Daytona webhook ingestion is not yet part of the runtime, so state convergence is eventual rather than near-real-time.
+- Daytona webhook verification currently relies on a high-entropy shared token plus optional organization allowlist. If Daytona later publishes a stable signature scheme, this path should move to cryptographic verification on the raw body.
 - Daytona cleanup is one of the most important cost-control paths, and failed sweeps or failed orphan reconciliation runs can still leave resources around temporarily.
 - OpenAI is currently used mostly for chat, while the analysis pipeline is still centered on sandbox inspection, so the two paths have not yet converged into a single agent framework.
 

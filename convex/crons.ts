@@ -27,4 +27,18 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  'repair daytona webhook backlog',
+  { minutes: 5 },
+  internal.daytonaWebhooks.repairBacklog,
+  {},
+);
+
+crons.interval(
+  'cleanup old daytona webhook events',
+  { hours: 12 },
+  internal.daytonaWebhooks.cleanupOldWebhookEvents,
+  {},
+);
+
 export default crons;

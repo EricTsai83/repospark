@@ -72,8 +72,8 @@ The backend is built entirely on Convex, with no separate Express or Nest API la
 - `query`: reads frontend-facing data such as repositories, threads, messages, and artifacts
 - `mutation`: creates imports, sends messages, requests deep analysis, and deletes data
 - `action` / `internalAction`: runs Node-runtime work such as GitHub App, Daytona, and OpenAI logic
-- `httpAction`: handles GitHub callbacks and webhooks
-- `cron`: periodically cleans up expired sandboxes
+- `httpAction`: handles GitHub callbacks plus GitHub and Daytona webhooks
+- `cron`: periodically cleans up sandboxes and repairs webhook backlog
 
 That means Convex simultaneously serves as the application database, application backend, background job scheduler, and a small set of HTTP integration endpoints.
 
@@ -122,7 +122,8 @@ That means Convex simultaneously serves as the application database, application
 - After import completes, the system proactively stops the sandbox to save resources.
 - The sandbox can still be reawakened later for deep analysis.
 - Deep-analysis requests extend sandbox TTL before queuing the background action so a valid sandbox is less likely to expire between request acceptance and execution start.
-- Cron-based reconciliation handles both expired sandboxes and Daytona-side orphan resources, making sandbox cleanup a core reliability concern rather than a best-effort background task.
+- Daytona webhook ingestion writes a durable event inbox plus a remote-observation projection so Convex can converge faster when Daytona state changes.
+- Cron-based reconciliation still handles expired sandboxes, Daytona-side orphan resources, and stuck webhook backlog, making sandbox cleanup a core reliability concern rather than a best-effort background task.
 
 ## Main User Flows
 
@@ -166,7 +167,7 @@ flowchart TD
 
 - `RepositoryShell` still carries a large amount of UI orchestration even after the hook extraction, so frontend state boundaries remain fairly centralized.
 - Both chat and deep analysis depend on the quality of imported data and sandbox availability.
-- The system does not yet have an explicit domain-event model and still relies mostly on table status fields plus the scheduler.
+- The system still relies mainly on table status fields plus the scheduler; only Daytona webhook handling currently uses an explicit inbox-and-projection pattern.
 
 ## Further Reading
 

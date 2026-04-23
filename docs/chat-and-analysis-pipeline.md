@@ -117,7 +117,7 @@ This is not a full RAG ranking pipeline. It is a lightweight relevance selector 
 If `OPENAI_API_KEY` exists, the system:
 
 - uses `streamText`
-- selects `OPENAI_MODEL` or falls back to `gpt-4o-mini`
+- selects `OPENAI_MODEL` or falls back to `gpt-5.4-mini`
 - builds a prompt from artifacts, chunks, and the user question
 
 If `OPENAI_API_KEY` is absent, the system falls back to a heuristic answer so it can still produce a response based on indexed data.

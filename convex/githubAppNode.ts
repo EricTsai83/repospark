@@ -2,6 +2,7 @@
 
 import { v } from 'convex/values';
 import jwt from 'jsonwebtoken';
+import { createPrivateKey, type KeyObject } from 'node:crypto';
 import { action, internalAction } from './_generated/server';
 import { internal } from './_generated/api';
 import { requireViewerIdentity } from './lib/auth';
@@ -17,22 +18,17 @@ import { parseGitHubUrl } from './lib/github';
  * The JWT is valid for 10 minutes (GitHub's maximum). It is used to call
  * the GitHub API as the App itself (e.g. to create installation access tokens).
  *
- * Requires env vars: GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY (base64-encoded PEM).
+ * Requires env vars: GITHUB_APP_ID, GITHUB_APP_PRIVATE_KEY (raw PEM).
  */
+type GitHubAppCredentials = {
+  appId: string;
+  privateKey: KeyObject;
+};
+
+let cachedGitHubAppCredentials: GitHubAppCredentials | null = null;
+
 function createAppJwt(): string {
-  const appId = process.env.GITHUB_APP_ID;
-  const privateKeyBase64 = process.env.GITHUB_APP_PRIVATE_KEY;
-
-  if (!appId) {
-    throw new Error('GITHUB_APP_ID is required. Set it in your Convex dashboard environment variables.');
-  }
-  if (!privateKeyBase64) {
-    throw new Error(
-      'GITHUB_APP_PRIVATE_KEY is required. Set it (base64-encoded PEM) in your Convex dashboard environment variables.',
-    );
-  }
-
-  const privateKey = Buffer.from(privateKeyBase64, 'base64').toString('utf-8');
+  const { appId, privateKey } = getGitHubAppCredentials();
   const now = Math.floor(Date.now() / 1000);
 
   return jwt.sign(
@@ -44,6 +40,58 @@ function createAppJwt(): string {
     privateKey,
     { algorithm: 'RS256' },
   );
+}
+
+function getGitHubAppCredentials(): GitHubAppCredentials {
+  if (cachedGitHubAppCredentials) {
+    return cachedGitHubAppCredentials;
+  }
+
+  const appId = process.env.GITHUB_APP_ID?.trim();
+  const configuredPrivateKey = process.env.GITHUB_APP_PRIVATE_KEY;
+
+  if (!appId) {
+    throw new Error('GITHUB_APP_ID is required. Set it in your Convex dashboard environment variables.');
+  }
+  if (!configuredPrivateKey?.trim()) {
+    throw new Error(
+      'GITHUB_APP_PRIVATE_KEY is required. Set it as the raw PEM private key in your Convex dashboard environment variables.',
+    );
+  }
+
+  const privateKeyPem = normalizePem(configuredPrivateKey);
+  if (!looksLikePemPrivateKey(privateKeyPem)) {
+    throw new Error(
+      'GITHUB_APP_PRIVATE_KEY must be the raw PEM private key, including the BEGIN/END PRIVATE KEY lines.',
+    );
+  }
+  let privateKey: KeyObject;
+
+  try {
+    privateKey = createPrivateKey({
+      key: privateKeyPem,
+      format: 'pem',
+    });
+  } catch (error) {
+    throw new Error(
+      `GITHUB_APP_PRIVATE_KEY is not a valid PEM private key: ${error instanceof Error ? error.message : 'Unknown error.'}`,
+    );
+  }
+
+  cachedGitHubAppCredentials = {
+    appId,
+    privateKey,
+  };
+
+  return cachedGitHubAppCredentials;
+}
+
+function normalizePem(value: string): string {
+  return value.replace(/\\n/g, '\n').replace(/\r\n/g, '\n').trim();
+}
+
+function looksLikePemPrivateKey(value: string): boolean {
+  return /^-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(value);
 }
 
 // ---------------------------------------------------------------------------
