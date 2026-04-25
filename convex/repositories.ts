@@ -151,7 +151,28 @@ export const getRepositoryDetail = query({
       )
       .order('desc')
       .take(Math.max(0, 20 - currentImportArtifacts.length));
-    const artifacts = [...currentImportArtifacts, ...recentDeepAnalysisArtifacts];
+
+    const threadScopedDeepAnalysisArtifacts: typeof recentDeepAnalysisArtifacts = [];
+    const repositoryThreads = await ctx.db
+      .query('threads')
+      .withIndex('by_repositoryId_and_lastMessageAt', (q) => q.eq('repositoryId', args.repositoryId))
+      .take(50);
+    for (const thread of repositoryThreads) {
+      const threadDeepArtifacts = await ctx.db
+        .query('artifacts')
+        .withIndex('by_threadId_and_kind', (q) =>
+          q.eq('threadId', thread._id).eq('kind', 'deep_analysis'),
+        )
+        .order('desc')
+        .take(5);
+      threadScopedDeepAnalysisArtifacts.push(...threadDeepArtifacts);
+    }
+
+    const artifacts = [
+      ...currentImportArtifacts,
+      ...recentDeepAnalysisArtifacts,
+      ...threadScopedDeepAnalysisArtifacts,
+    ];
     const jobs = await ctx.db
       .query('jobs')
       .withIndex('by_repositoryId', (q) => q.eq('repositoryId', args.repositoryId))
@@ -468,7 +489,29 @@ export const cascadeDeleteRepository = internalMutation({
         more = true;
       }
 
-      if (msgs.length < CASCADE_BATCH_SIZE && streams.length < CASCADE_BATCH_SIZE && streamChunksDrained) {
+      let artifactsDrained = true;
+      let artifactMore = false;
+      for (let pass = 0; pass < STREAM_CHUNK_DRAIN_PASS_LIMIT; pass += 1) {
+        const artifacts = await ctx.db
+          .query('artifacts')
+          .withIndex('by_threadId', (q) => q.eq('threadId', thread._id))
+          .take(CASCADE_BATCH_SIZE);
+        for (const artifact of artifacts) {
+          await ctx.db.delete(artifact._id);
+        }
+        if (artifacts.length === CASCADE_BATCH_SIZE) {
+          artifactMore = true;
+        } else {
+          artifactsDrained = true;
+          break;
+        }
+      }
+      if (artifactMore) {
+        artifactsDrained = false;
+        more = true;
+      }
+
+      if (msgs.length < CASCADE_BATCH_SIZE && streams.length < CASCADE_BATCH_SIZE && streamChunksDrained && artifactsDrained) {
         await ctx.db.delete(thread._id);
       } else {
         more = true;

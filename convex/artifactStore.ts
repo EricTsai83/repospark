@@ -22,8 +22,11 @@ interface CreateArtifactArgs {
  * Enforces the polymorphic-parent invariant from the PRD: every artifact must
  * belong to at least one of `thread` or `repository`. The schema makes both
  * fields `v.optional`, so this is the only place the rule is enforced.
+ *
+ * Exported so direct `ctx.db.insert('artifacts', …)` call sites that bypass
+ * `createArtifactInternal` can still enforce the invariant in one place.
  */
-function validateParentPresence(
+export function validateParentPresence(
   threadId: Id<'threads'> | undefined,
   repositoryId: Id<'repositories'> | undefined,
 ) {
@@ -95,51 +98,59 @@ async function deleteArtifactInternal(
 async function listByThreadInternal(
   ctx: QueryCtx,
   threadId: Id<'threads'>,
+  limit?: number,
 ): Promise<Doc<'artifacts'>[]> {
+  const normalizedLimit = Math.max(1, Math.floor(limit ?? 100));
   return await ctx.db
     .query('artifacts')
     .withIndex('by_threadId', (q) => q.eq('threadId', threadId))
     .order('desc')
-    .take(100);
+    .take(normalizedLimit);
 }
 
 async function listByThreadAndKindInternal(
   ctx: QueryCtx,
   threadId: Id<'threads'>,
   kind: ArtifactKind,
+  limit?: number,
 ): Promise<Doc<'artifacts'>[]> {
+  const normalizedLimit = Math.max(1, Math.floor(limit ?? 100));
   return await ctx.db
     .query('artifacts')
     .withIndex('by_threadId_and_kind', (q) =>
       q.eq('threadId', threadId).eq('kind', kind),
     )
     .order('desc')
-    .take(100);
+    .take(normalizedLimit);
 }
 
 async function listByRepositoryInternal(
   ctx: QueryCtx,
   repositoryId: Id<'repositories'>,
+  limit?: number,
 ): Promise<Doc<'artifacts'>[]> {
+  const normalizedLimit = Math.max(1, Math.floor(limit ?? 100));
   return await ctx.db
     .query('artifacts')
     .withIndex('by_repositoryId', (q) => q.eq('repositoryId', repositoryId))
     .order('desc')
-    .take(100);
+    .take(normalizedLimit);
 }
 
 async function listByRepositoryAndKindInternal(
   ctx: QueryCtx,
   repositoryId: Id<'repositories'>,
   kind: ArtifactKind,
+  limit?: number,
 ): Promise<Doc<'artifacts'>[]> {
+  const normalizedLimit = Math.max(1, Math.floor(limit ?? 100));
   return await ctx.db
     .query('artifacts')
     .withIndex('by_repositoryId_and_kind', (q) =>
       q.eq('repositoryId', repositoryId).eq('kind', kind),
     )
     .order('desc')
-    .take(100);
+    .take(normalizedLimit);
 }
 
 const artifactKindValidator = v.union(
@@ -206,22 +217,22 @@ export const deleteArtifact = internalMutation({
 });
 
 export const listByThread = internalQuery({
-  args: { threadId: v.id('threads') },
-  handler: (ctx, args) => listByThreadInternal(ctx, args.threadId),
+  args: { threadId: v.id('threads'), limit: v.optional(v.number()) },
+  handler: (ctx, args) => listByThreadInternal(ctx, args.threadId, args.limit),
 });
 
 export const listByThreadAndKind = internalQuery({
-  args: { threadId: v.id('threads'), kind: artifactKindValidator },
-  handler: (ctx, args) => listByThreadAndKindInternal(ctx, args.threadId, args.kind),
+  args: { threadId: v.id('threads'), kind: artifactKindValidator, limit: v.optional(v.number()) },
+  handler: (ctx, args) => listByThreadAndKindInternal(ctx, args.threadId, args.kind, args.limit),
 });
 
 export const listByRepository = internalQuery({
-  args: { repositoryId: v.id('repositories') },
-  handler: (ctx, args) => listByRepositoryInternal(ctx, args.repositoryId),
+  args: { repositoryId: v.id('repositories'), limit: v.optional(v.number()) },
+  handler: (ctx, args) => listByRepositoryInternal(ctx, args.repositoryId, args.limit),
 });
 
 export const listByRepositoryAndKind = internalQuery({
-  args: { repositoryId: v.id('repositories'), kind: artifactKindValidator },
+  args: { repositoryId: v.id('repositories'), kind: artifactKindValidator, limit: v.optional(v.number()) },
   handler: (ctx, args) =>
-    listByRepositoryAndKindInternal(ctx, args.repositoryId, args.kind),
+    listByRepositoryAndKindInternal(ctx, args.repositoryId, args.kind, args.limit),
 });

@@ -290,6 +290,10 @@ export const createThread = mutation({
   handler: async (ctx, args) => {
     const identity = await requireViewerIdentity(ctx);
 
+    if (args.mode === 'deep' && !args.repositoryId) {
+      throw new Error('Deep mode requires an attached repository.');
+    }
+
     let title = args.title;
     if (args.repositoryId) {
       const repository = await ctx.db.get(args.repositoryId);
@@ -975,13 +979,17 @@ function buildUserPrompt(
     context.repositorySummary ? `Repository summary: ${context.repositorySummary}` : undefined,
     context.readmeSummary ? `README summary: ${context.readmeSummary}` : undefined,
     context.architectureSummary ? `Architecture summary: ${context.architectureSummary}` : undefined,
-    hasRepoContext ? '' : undefined,
-    hasRepoContext ? 'Artifacts:' : undefined,
-    hasRepoContext ? artifactSection || 'No artifacts were pre-selected.' : undefined,
-    hasRepoContext ? '' : undefined,
-    hasRepoContext ? 'Relevant code excerpts:' : undefined,
-    hasRepoContext ? chunkSection || 'No highly relevant chunks were pre-selected.' : undefined,
-    hasRepoContext ? '' : 'No repository is attached to this thread; answer from general architecture knowledge.',
+    ...(hasRepoContext
+      ? [
+          '',
+          'Artifacts:',
+          artifactSection || 'No artifacts were pre-selected.',
+          '',
+          'Relevant code excerpts:',
+          chunkSection || 'No highly relevant chunks were pre-selected.',
+          '',
+        ]
+      : ['No repository is attached to this thread; answer from general architecture knowledge.']),
     `User question: ${question}`,
   ]
     .filter((line): line is string => line !== undefined)

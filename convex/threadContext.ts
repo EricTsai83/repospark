@@ -41,15 +41,17 @@ function toChatModeSandboxStatus(status: SandboxTableStatus | null): ChatModeSan
   }
 }
 
-async function loadThreadContext(
+async function loadThread(
   ctx: QueryCtx,
   threadId: Id<'threads'>,
-): Promise<ThreadContext | null> {
-  const thread = await ctx.db.get(threadId);
-  if (!thread) {
-    return null;
-  }
+): Promise<Doc<'threads'> | null> {
+  return await ctx.db.get(threadId);
+}
 
+async function enrichThreadContext(
+  ctx: QueryCtx,
+  thread: Doc<'threads'>,
+): Promise<ThreadContext> {
   let attachedRepository: Doc<'repositories'> | null = null;
   let sandboxStatus: SandboxTableStatus | null = null;
 
@@ -74,21 +76,39 @@ async function loadThreadContext(
   };
 }
 
+async function loadThreadContext(
+  ctx: QueryCtx,
+  threadId: Id<'threads'>,
+): Promise<ThreadContext | null> {
+  const thread = await loadThread(ctx, threadId);
+  if (!thread) {
+    return null;
+  }
+  return enrichThreadContext(ctx, thread);
+}
+
 export const getThreadContext = query({
   args: { threadId: v.id('threads') },
   handler: async (ctx, args) => {
     const identity = await requireViewerIdentity(ctx);
-    const threadContext = await loadThreadContext(ctx, args.threadId);
+    const thread = await loadThread(ctx, args.threadId);
 
-    if (!threadContext) {
+    if (!thread) {
       return null;
     }
 
-    if (threadContext.thread.ownerTokenIdentifier !== identity.tokenIdentifier) {
+    if (thread.ownerTokenIdentifier !== identity.tokenIdentifier) {
       throw new Error('Thread not found.');
     }
 
-    return threadContext;
+    if (thread.repositoryId) {
+      const repository = await ctx.db.get(thread.repositoryId);
+      if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+        throw new Error('Thread not found.');
+      }
+    }
+
+    return enrichThreadContext(ctx, thread);
   },
 });
 

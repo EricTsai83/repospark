@@ -354,6 +354,37 @@ describe('ArtifactStore — update/delete', () => {
     const stored = await t.query(internal.artifactStore.getArtifact, { artifactId });
     expect(stored!.title).toBe('v3');
     expect(stored!.version).toBe(3);
+    expect(stored!.summary).toBe('s');
+    expect(stored!.contentMarkdown).toBe('m');
+  });
+
+  test('updateArtifact throws when artifact not found', async () => {
+    const t = convexTest(schema, modules);
+    const threadId = await seedThread(t);
+
+    // Allocate a real artifact id, then delete it so the id is well-formed
+    // but does not refer to an existing document.
+    const nonexistentId = await t.run(async (ctx) => {
+      const id = await ctx.db.insert('artifacts', {
+        threadId,
+        ownerTokenIdentifier: OWNER,
+        kind: 'adr',
+        title: 'tombstone',
+        summary: 's',
+        contentMarkdown: 'm',
+        source: 'llm',
+        version: 1,
+      });
+      await ctx.db.delete(id);
+      return id;
+    });
+
+    await expect(
+      t.mutation(internal.artifactStore.updateArtifact, {
+        artifactId: nonexistentId,
+        title: 'x',
+      }),
+    ).rejects.toThrow(/Artifact not found/i);
   });
 
   test('deleteArtifact removes the artifact', async () => {
