@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { SidebarInset } from '@/components/ui/sidebar';
@@ -12,7 +13,6 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useCheckForUpdates } from '@/hooks/use-check-for-updates';
 import { useRepositoryActions } from '@/hooks/use-repository-actions';
-import { useRepositorySelection } from '@/hooks/use-repository-selection';
 import type { RepositoryId, ThreadId, ChatMode } from '@/lib/types';
 
 type RepositoryWorkspaceStatus = 'initializing' | 'no-repo' | 'ready';
@@ -21,10 +21,51 @@ const DeepAnalysisDialog = lazy(() =>
   import('@/components/deep-analysis-dialog').then((module) => ({ default: module.DeepAnalysisDialog })),
 );
 
-export function RepositoryShell() {
+/**
+ * URL ↔ workspace-state bridge. The route layer (`/chat`, `/t/:threadId`,
+ * `/r/:repoId`) hands us the params; everything else in the workspace is
+ * derived from them so that selection stays a single source of truth and a
+ * shareable URL always restores the same view.
+ *
+ * Resolution order:
+ *
+ * 1. `urlThreadId` is the highest-priority hint. The thread's own
+ *    `repositoryId` (loaded via `getThreadContext`) drives the repo panel —
+ *    repo-less threads show the chat input but no repo-scoped tabs.
+ * 2. `urlRepositoryId` (no thread) shows the repo's overview without forcing
+ *    a thread selection; the user picks a thread from the sidebar.
+ * 3. Neither set (`/chat`) and the user has at least one thread → redirect to
+ *    `/t/:mostRecent` so the URL always reflects the visible thread (PRD US 27).
+ * 4. Neither set and the user has no threads → render the empty state with
+ *    the dual CTA (PRD US 9).
+ */
+export function RepositoryShell({
+  urlThreadId,
+  urlRepositoryId,
+}: {
+  urlThreadId: ThreadId | null;
+  urlRepositoryId: RepositoryId | null;
+}) {
+  const navigate = useNavigate();
   const repositories = useQuery(api.repositories.listRepositories);
-  const [selectedRepositoryId, setSelectedRepositoryId] = useState<RepositoryId | null>(null);
-  const [selectedThreadId, setSelectedThreadId] = useState<ThreadId | null>(null);
+
+  // Loaded only when `urlThreadId` is set so that we can:
+  //   - validate the thread belongs to the viewer
+  //   - derive the attached repository (if any) so the repo panel renders
+  //     consistently with /r/:repoId
+  const threadContext = useQuery(
+    api.threadContext.getThreadContext,
+    urlThreadId ? { threadId: urlThreadId } : 'skip',
+  );
+
+  // Loaded only on the no-selection landing (`/chat`) so we can redirect to
+  // the most recent thread when one exists. The query is owner-scoped via
+  // chat.listThreads's no-arg branch added in Phase 1.
+  const ownerThreads = useQuery(
+    api.chat.listThreads,
+    urlThreadId === null && urlRepositoryId === null ? {} : 'skip',
+  );
+
   const [threadToDelete, setThreadToDelete] = useState<ThreadId | null>(null);
   const [showDeleteRepoDialog, setShowDeleteRepoDialog] = useState(false);
   const [analysisPrompt, setAnalysisPrompt] = useState(
@@ -37,53 +78,52 @@ export function RepositoryShell() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
-  const { effectiveSelectedRepositoryId, isRepositoriesLoading, selectedRepoName } = useRepositorySelection(
-    repositories,
-    selectedRepositoryId,
-  );
+  const isRepositoriesLoading = repositories === undefined;
+
+  // /t/:threadId → use thread's repository (if any). /r/:repoId → use the
+  // URL repo. /chat → null until the redirect-to-most-recent effect runs.
+  const effectiveSelectedRepositoryId: RepositoryId | null =
+    urlRepositoryId ?? threadContext?.attachedRepository?._id ?? null;
+
+  const effectiveSelectedThreadId: ThreadId | null = urlThreadId;
+
+  const selectedRepoName = repositories?.find(
+    (repository) => repository._id === effectiveSelectedRepositoryId,
+  )?.sourceRepoFullName;
 
   const repoDetail = useQuery(
     api.repositories.getRepositoryDetail,
     effectiveSelectedRepositoryId ? { repositoryId: effectiveSelectedRepositoryId } : 'skip',
   );
 
-  const handleSelectThread = useCallback((threadId: ThreadId | null) => {
-    setActionError(null);
-    setAnalysisError(null);
-    setSelectedThreadId(threadId);
-  }, []);
+  // PRD US 27: most recent thread loads on landing. Runs only on `/chat` when
+  // the owner has at least one thread; the redirect is `replace` so the user
+  // can still hit Back to leave the workspace without bouncing through /chat.
+  useEffect(() => {
+    if (urlThreadId !== null || urlRepositoryId !== null) {
+      return;
+    }
+    if (!ownerThreads || ownerThreads.length === 0) {
+      return;
+    }
+    void navigate(`/t/${ownerThreads[0]._id}`, { replace: true });
+  }, [navigate, ownerThreads, urlRepositoryId, urlThreadId]);
 
-  // Check GitHub for new remote commits on tab-focus and repo-switch
+  // Fall back gracefully when a thread URL points at an entity the viewer no
+  // longer owns or that has been deleted. Matches the empty-state recovery
+  // path so the user sees actionable CTAs instead of a broken workspace.
+  useEffect(() => {
+    if (urlThreadId === null) {
+      return;
+    }
+    if (threadContext === null) {
+      void navigate('/chat', { replace: true });
+    }
+  }, [navigate, threadContext, urlThreadId]);
+
+  // Check GitHub for new remote commits on tab-focus and repo-switch.
   useCheckForUpdates(effectiveSelectedRepositoryId);
 
-  // Threads are also subscribed inside the sidebar's ThreadsSection; Convex
-  // dedupes identical subscriptions, so this extra useQuery is free and lets
-  // the main panel compute a single unified "chat is still resolving" flag
-  // instead of flashing between skeletons and empty states.
-  const threadsForChat = useQuery(
-    api.chat.listThreads,
-    effectiveSelectedRepositoryId ? { repositoryId: effectiveSelectedRepositoryId } : 'skip',
-  );
-  const artifacts = repoDetail?.artifacts;
-  const jobs = repoDetail?.jobs;
-
-  const workspaceStatus: RepositoryWorkspaceStatus = isRepositoriesLoading
-    ? 'initializing'
-    : effectiveSelectedRepositoryId === null
-      ? 'no-repo'
-      : 'ready';
-
-  const defaultThreadId = repoDetail?.repository.defaultThreadId;
-  const preferredThreadId =
-    workspaceStatus === 'ready' && threadsForChat && threadsForChat.length > 0
-      ? defaultThreadId && threadsForChat.some((thread) => thread._id === defaultThreadId)
-        ? defaultThreadId
-        : threadsForChat[0]._id
-      : null;
-  const effectiveSelectedThreadId =
-    selectedThreadId && threadsForChat?.some((thread) => thread._id === selectedThreadId)
-      ? selectedThreadId
-      : preferredThreadId;
   const messages = useQuery(
     api.chat.listMessages,
     effectiveSelectedThreadId ? { threadId: effectiveSelectedThreadId } : 'skip',
@@ -93,9 +133,60 @@ export function RepositoryShell() {
     effectiveSelectedThreadId ? { threadId: effectiveSelectedThreadId } : 'skip',
   );
 
+  const isOnLanding = urlThreadId === null && urlRepositoryId === null;
+  const isLandingResolving =
+    isOnLanding && (ownerThreads === undefined || (ownerThreads.length > 0));
+
+  const workspaceStatus: RepositoryWorkspaceStatus = isRepositoriesLoading
+    ? 'initializing'
+    : isOnLanding && ownerThreads?.length === 0
+      ? 'no-repo'
+      : effectiveSelectedRepositoryId === null && effectiveSelectedThreadId === null
+        ? 'no-repo'
+        : 'ready';
+
   const isChatLoading =
     workspaceStatus === 'initializing' ||
-    (workspaceStatus === 'ready' && (threadsForChat === undefined || (effectiveSelectedThreadId !== null && messages === undefined)));
+    isLandingResolving ||
+    (effectiveSelectedThreadId !== null && (messages === undefined || threadContext === undefined));
+
+  const handleSelectThread = useCallback(
+    (threadId: ThreadId | null) => {
+      setActionError(null);
+      setAnalysisError(null);
+      if (threadId === null) {
+        void navigate('/chat');
+      } else {
+        void navigate(`/t/${threadId}`);
+      }
+    },
+    [navigate],
+  );
+
+  const handleSelectRepository = useCallback(
+    (repoId: RepositoryId) => {
+      setActionError(null);
+      setAnalysisError(null);
+      void navigate(`/r/${repoId}`);
+    },
+    [navigate],
+  );
+
+  // Import success can produce either a fresh repo+thread (when the user
+  // imports their first repository) or just a repo (subsequent imports).
+  // We prefer the thread URL so the user lands directly in chatting context.
+  const handleImported = useCallback(
+    (repoId: RepositoryId, threadId: ThreadId | null) => {
+      setActionError(null);
+      setAnalysisError(null);
+      if (threadId) {
+        void navigate(`/t/${threadId}`);
+      } else {
+        void navigate(`/r/${repoId}`);
+      }
+    },
+    [navigate],
+  );
 
   const {
     isSending,
@@ -118,8 +209,14 @@ export function RepositoryShell() {
     setChatInput,
     setActionError,
     setAnalysisError,
-    setSelectedRepositoryId,
-    setSelectedThreadId,
+    onAfterDeleteThread: () => {
+      // After deletion the thread no longer exists. Send the user back to the
+      // landing so the redirect-to-most-recent or empty-state logic re-resolves.
+      void navigate('/chat');
+    },
+    onAfterDeleteRepo: () => {
+      void navigate('/chat');
+    },
     setThreadToDelete,
     setShowDeleteRepoDialog,
     setShowAnalysisDialog,
@@ -130,23 +227,12 @@ export function RepositoryShell() {
       <AppSidebar
         repositories={repositories}
         selectedRepositoryId={effectiveSelectedRepositoryId}
-        onSelectRepository={(id) => {
-          setActionError(null);
-          setAnalysisError(null);
-          setSelectedRepositoryId(id);
-          setSelectedThreadId(null);
-          setThreadToDelete(null);
-        }}
-          selectedThreadId={effectiveSelectedThreadId}
+        onSelectRepository={handleSelectRepository}
+        selectedThreadId={effectiveSelectedThreadId}
         onSelectThread={handleSelectThread}
         onDeleteThread={setThreadToDelete}
         chatMode={chatMode}
-        onImported={(repoId, threadId) => {
-          setActionError(null);
-          setAnalysisError(null);
-          setSelectedRepositoryId(repoId);
-          if (threadId) setSelectedThreadId(threadId);
-        }}
+        onImported={handleImported}
       />
 
       <SidebarInset>
@@ -174,8 +260,8 @@ export function RepositoryShell() {
           <RepositoryTabs
             activeTab={activeTab}
             onActiveTabChange={setActiveTab}
-            jobs={jobs}
-            artifacts={artifacts}
+            jobs={repoDetail?.jobs}
+            artifacts={repoDetail?.artifacts}
             selectedThreadId={effectiveSelectedThreadId}
             messages={messages}
             activeMessageStream={activeMessageStream}
