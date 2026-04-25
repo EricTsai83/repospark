@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Doc } from '../../convex/_generated/dataModel';
@@ -60,95 +59,10 @@ const NO_THREAD_LOADING_CAPABILITIES: ThreadCapabilities = {
   isLoading: true,
 };
 
-function buildThreadCapabilities(
-  threadId: ThreadId | null,
-  ctx: ReturnType<typeof useQuery<typeof api.threadContext.getThreadContext>>,
-): ThreadCapabilities {
-  if (threadId === null) {
-    return NO_THREAD_CAPABILITIES;
-  }
-
-  if (ctx === undefined) {
-    return NO_THREAD_LOADING_CAPABILITIES;
-  }
-
-  if (ctx === null) {
-    return {
-      ...NO_THREAD_CAPABILITIES,
-      isMissingThread: true,
-    };
-  }
-
-  const attachedRepository = ctx.attachedRepository
-    ? {
-        id: ctx.attachedRepository._id,
-        fullName: ctx.attachedRepository.sourceRepoFullName,
-        shortName: ctx.attachedRepository.sourceRepoName,
-      }
-    : null;
-
-  return {
-    isLoading: false,
-    isMissingThread: false,
-    attachedRepository,
-    sandboxStatus: ctx.sandboxStatus,
-    sandboxModeStatus: ctx.sandboxModeStatus,
-    availableModes: ctx.chatModes.availableModes,
-    defaultMode: ctx.chatModes.defaultMode,
-    disabledReasons: ctx.chatModes.disabledReasons,
-  };
-}
-
-function areStringArraysEqual(left: readonly string[], right: readonly string[]) {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
-}
-
-function areDisabledReasonsEqual(
-  left: ChatModeResolution['disabledReasons'],
-  right: ChatModeResolution['disabledReasons'],
-) {
-  const leftKeys = Object.keys(left).sort();
-  const rightKeys = Object.keys(right).sort();
-  return (
-    areStringArraysEqual(leftKeys, rightKeys) &&
-    leftKeys.every((key) => left[key as ChatMode] === right[key as ChatMode])
-  );
-}
-
-function areAttachedRepositoriesEqual(
-  left: AttachedRepositorySummary | null,
-  right: AttachedRepositorySummary | null,
-) {
-  if (left === right) {
-    return true;
-  }
-  if (!left || !right) {
-    return left === right;
-  }
-  return (
-    left.id === right.id &&
-    left.fullName === right.fullName &&
-    left.shortName === right.shortName
-  );
-}
-
-function areCapabilitiesEqual(left: ThreadCapabilities, right: ThreadCapabilities) {
-  return (
-    left === right ||
-    (left.isLoading === right.isLoading &&
-      left.isMissingThread === right.isMissingThread &&
-      areAttachedRepositoriesEqual(left.attachedRepository, right.attachedRepository) &&
-      left.sandboxStatus === right.sandboxStatus &&
-      left.sandboxModeStatus?.reasonCode === right.sandboxModeStatus?.reasonCode &&
-      left.sandboxModeStatus?.message === right.sandboxModeStatus?.message &&
-      left.defaultMode === right.defaultMode &&
-      areStringArraysEqual(left.availableModes, right.availableModes) &&
-      areDisabledReasonsEqual(left.disabledReasons, right.disabledReasons))
-  );
-}
+const MISSING_THREAD_CAPABILITIES: ThreadCapabilities = {
+  ...NO_THREAD_CAPABILITIES,
+  isMissingThread: true,
+};
 
 /**
  * Bridges {@link api.threadContext.getThreadContext} (which itself wraps
@@ -173,12 +87,34 @@ export function useThreadCapabilities(threadId: ThreadId | null): ThreadCapabili
     api.threadContext.getThreadContext,
     threadId ? { threadId } : 'skip',
   );
-  const stableCapabilitiesRef = useRef<ThreadCapabilities>(NO_THREAD_CAPABILITIES);
-  const nextCapabilities = buildThreadCapabilities(threadId, ctx);
-
-  if (!areCapabilitiesEqual(stableCapabilitiesRef.current, nextCapabilities)) {
-    stableCapabilitiesRef.current = nextCapabilities;
+  if (threadId === null) {
+    return NO_THREAD_CAPABILITIES;
   }
 
-  return stableCapabilitiesRef.current;
+  if (ctx === undefined) {
+    return NO_THREAD_LOADING_CAPABILITIES;
+  }
+
+  if (ctx === null) {
+    return MISSING_THREAD_CAPABILITIES;
+  }
+
+  const attachedRepository = ctx.attachedRepository
+    ? {
+        id: ctx.attachedRepository._id,
+        fullName: ctx.attachedRepository.sourceRepoFullName,
+        shortName: ctx.attachedRepository.sourceRepoName,
+      }
+    : null;
+
+  return {
+    isLoading: false,
+    isMissingThread: false,
+    attachedRepository,
+    sandboxStatus: ctx.sandboxStatus,
+    sandboxModeStatus: ctx.sandboxModeStatus,
+    availableModes: ctx.chatModes.availableModes,
+    defaultMode: ctx.chatModes.defaultMode,
+    disabledReasons: ctx.chatModes.disabledReasons,
+  };
 }

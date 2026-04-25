@@ -216,33 +216,4 @@ describe('useThreadCapabilities — bridging behavior', () => {
     expect(result.current.disabledReasons.sandbox).toMatch(/expired/i);
   });
 
-  test('memoizes the resolved capabilities object while the query result is unchanged', () => {
-    useQueryMock.mockImplementation(() => ({
-      thread: { _id: threadId, repositoryId },
-      attachedRepository: {
-        _id: repositoryId,
-        sourceRepoFullName: 'acme/widget',
-        sourceRepoName: 'widget',
-      },
-      sandboxStatus: 'ready',
-      sandboxModeStatus: {
-        reasonCode: 'available',
-        message: null,
-      },
-      chatModes: {
-        availableModes: ['discuss', 'docs', 'sandbox'],
-        defaultMode: 'docs',
-        disabledReasons: {},
-      },
-    }));
-
-    const { result, rerender } = renderHook(() => useThreadCapabilities(threadId));
-    const firstResult = result.current;
-    const firstAttachedRepository = result.current.attachedRepository;
-
-    rerender();
-
-    expect(result.current).toBe(firstResult);
-    expect(result.current.attachedRepository).toBe(firstAttachedRepository);
-  });
 });

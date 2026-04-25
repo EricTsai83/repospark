@@ -189,7 +189,7 @@ function ModePillBar({
     for (let offset = 1; offset <= MODE_CATALOG.length; offset += 1) {
       const nextIndex =
         (currentIndex + offset * step + MODE_CATALOG.length) % MODE_CATALOG.length;
-      if (availableModeSet.has(MODE_CATALOG[nextIndex]!.value)) {
+      if (availableModeSet.has(MODE_CATALOG[nextIndex].value)) {
         return nextIndex;
       }
     }
@@ -201,7 +201,7 @@ function ModePillBar({
       direction === 'first'
         ? MODE_CATALOG.map((_, index) => index)
         : MODE_CATALOG.map((_, index) => MODE_CATALOG.length - 1 - index);
-    return orderedIndexes.find((index) => availableModeSet.has(MODE_CATALOG[index]!.value));
+    return orderedIndexes.find((index) => availableModeSet.has(MODE_CATALOG[index].value));
   };
 
   const handleOptionKeyDown = (
