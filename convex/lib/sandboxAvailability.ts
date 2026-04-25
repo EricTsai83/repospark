@@ -17,6 +17,8 @@ export type SandboxAvailability = {
   message: string | null;
 };
 
+export type SandboxModeStatus = Pick<SandboxAvailability, 'reasonCode' | 'message'>;
+
 export function getSandboxAvailability(
   sandbox: SandboxAvailabilityInput | null | undefined,
   now = Date.now(),
@@ -61,6 +63,17 @@ export function getSandboxAvailability(
     available: true,
     reasonCode: 'available',
     message: null,
+  };
+}
+
+export function getSandboxModeStatus(
+  sandbox: SandboxAvailabilityInput | null | undefined,
+  now = Date.now(),
+): SandboxModeStatus {
+  const availability = getSandboxAvailability(sandbox, now);
+  return {
+    reasonCode: availability.reasonCode,
+    message: availability.message,
   };
 }
 

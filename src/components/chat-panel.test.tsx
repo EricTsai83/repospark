@@ -79,8 +79,7 @@ describe('ChatPanel streaming rendering', () => {
         }}
         isSending={false}
         onSendMessage={vi.fn()}
-        sandboxModeAvailable
-        sandboxModeStatus={null}
+        sandboxModeStatus={{ reasonCode: 'available', message: null }}
         isSyncing={false}
         onSync={vi.fn()}
       />,
@@ -117,8 +116,7 @@ describe('ChatPanel streaming rendering', () => {
         disabledModeReasons={{ sandbox: 'Provision a sandbox to use Sandbox mode.' }}
         isSending={false}
         onSendMessage={vi.fn()}
-        sandboxModeAvailable
-        sandboxModeStatus={null}
+        sandboxModeStatus={{ reasonCode: 'available', message: null }}
         isSyncing={false}
         onSync={vi.fn()}
       />,
@@ -148,8 +146,7 @@ describe('ChatPanel streaming rendering', () => {
         disabledModeReasons={{ sandbox: 'Provision a sandbox to use Sandbox mode.' }}
         isSending={false}
         onSendMessage={vi.fn()}
-        sandboxModeAvailable
-        sandboxModeStatus={null}
+        sandboxModeStatus={{ reasonCode: 'available', message: null }}
         isSyncing={false}
         onSync={vi.fn()}
       />,
@@ -175,8 +172,7 @@ describe('ChatPanel streaming rendering', () => {
         disabledModeReasons={{}}
         isSending={false}
         onSendMessage={vi.fn()}
-        sandboxModeAvailable
-        sandboxModeStatus={null}
+        sandboxModeStatus={{ reasonCode: 'available', message: null }}
         isSyncing={false}
         onSync={vi.fn()}
       />,

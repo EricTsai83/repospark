@@ -3,7 +3,7 @@ import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Doc } from '../../convex/_generated/dataModel';
 import { getDefaultThreadMode, type ChatMode, type ChatModeResolution } from '../../convex/chatModeResolver';
-import type { RepositoryId, ThreadId } from '@/lib/types';
+import type { RepositoryId, SandboxModeStatus, ThreadId } from '@/lib/types';
 
 export type SandboxLifecycleStatus = Doc<'sandboxes'>['status'];
 
@@ -22,6 +22,8 @@ export interface ThreadCapabilities {
   attachedRepository: AttachedRepositorySummary | null;
   /** Sandbox lifecycle status of the attached repository's latest sandbox. */
   sandboxStatus: SandboxLifecycleStatus | null;
+  /** User-facing sandbox-mode status when a repository is attached. */
+  sandboxModeStatus: SandboxModeStatus | null;
   /** Modes the UI should render as enabled in the selector. */
   availableModes: readonly ChatMode[];
   /** Mode the UI should preselect when the thread first loads. */
@@ -47,6 +49,7 @@ const NO_THREAD_CAPABILITIES: ThreadCapabilities = {
   isMissingThread: false,
   attachedRepository: null,
   sandboxStatus: null,
+  sandboxModeStatus: null,
   availableModes: ['discuss'],
   defaultMode: getDefaultThreadMode(false),
   disabledReasons: NO_THREAD_DISABLED_REASONS,
@@ -89,6 +92,7 @@ function buildThreadCapabilities(
     isMissingThread: false,
     attachedRepository,
     sandboxStatus: ctx.sandboxStatus,
+    sandboxModeStatus: ctx.sandboxModeStatus,
     availableModes: ctx.chatModes.availableModes,
     defaultMode: ctx.chatModes.defaultMode,
     disabledReasons: ctx.chatModes.disabledReasons,
@@ -138,6 +142,8 @@ function areCapabilitiesEqual(left: ThreadCapabilities, right: ThreadCapabilitie
       left.isMissingThread === right.isMissingThread &&
       areAttachedRepositoriesEqual(left.attachedRepository, right.attachedRepository) &&
       left.sandboxStatus === right.sandboxStatus &&
+      left.sandboxModeStatus?.reasonCode === right.sandboxModeStatus?.reasonCode &&
+      left.sandboxModeStatus?.message === right.sandboxModeStatus?.message &&
       left.defaultMode === right.defaultMode &&
       areStringArraysEqual(left.availableModes, right.availableModes) &&
       areDisabledReasonsEqual(left.disabledReasons, right.disabledReasons))

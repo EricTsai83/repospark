@@ -11,14 +11,14 @@ import {
   DialogTitle,
   DialogClose,
 } from '@/components/ui/dialog';
+import type { SandboxModeStatus } from '@/lib/types';
 
 export function DeepAnalysisDialog({
   open,
   onOpenChange,
   analysisPrompt,
   onAnalysisPromptChange,
-  sandboxAvailable,
-  sandboxReason,
+  sandboxModeStatus,
   errorMessage,
   isRunning,
   onRun,
@@ -27,12 +27,13 @@ export function DeepAnalysisDialog({
   onOpenChange: (open: boolean) => void;
   analysisPrompt: string;
   onAnalysisPromptChange: (value: string) => void;
-  sandboxAvailable: boolean;
-  sandboxReason?: string | null;
+  sandboxModeStatus: SandboxModeStatus;
   errorMessage?: string | null;
   isRunning: boolean;
   onRun: () => Promise<void>;
 }) {
+  const sandboxAvailable = sandboxModeStatus.reasonCode === 'available';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -51,7 +52,7 @@ export function DeepAnalysisDialog({
         {!sandboxAvailable ? (
           <AppNotice
             title="Deep analysis unavailable"
-            message={sandboxReason ?? 'A live sandbox is unavailable right now. Sync the repository to provision a fresh sandbox.'}
+            message={sandboxModeStatus.message ?? 'A live sandbox is unavailable right now. Sync the repository to provision a fresh sandbox.'}
             tone="warning"
           />
         ) : null}

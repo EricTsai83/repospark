@@ -42,7 +42,7 @@ describe('DeepAnalysisDialog', () => {
         onOpenChange={onOpenChange}
         analysisPrompt="Inspect auth flow"
         onAnalysisPromptChange={vi.fn()}
-        sandboxAvailable
+        sandboxModeStatus={{ reasonCode: 'available', message: null }}
         errorMessage={null}
         isRunning={false}
         onRun={onRun}
@@ -62,7 +62,10 @@ describe('DeepAnalysisDialog', () => {
         onOpenChange={vi.fn()}
         analysisPrompt="Inspect auth flow"
         onAnalysisPromptChange={vi.fn()}
-        sandboxAvailable={false}
+        sandboxModeStatus={{
+          reasonCode: 'sandbox_unavailable',
+          message: 'A live sandbox is unavailable right now. Sync the repository to provision a fresh sandbox.',
+        }}
         errorMessage={null}
         isRunning={false}
         onRun={vi.fn().mockResolvedValue(undefined)}

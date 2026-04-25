@@ -71,6 +71,7 @@ describe('useThreadCapabilities — bridging behavior', () => {
       thread: { _id: threadId },
       attachedRepository: null,
       sandboxStatus: null,
+      sandboxModeStatus: null,
       chatModes: {
         availableModes: ['discuss'],
         defaultMode: 'discuss',
@@ -99,6 +100,10 @@ describe('useThreadCapabilities — bridging behavior', () => {
         sourceRepoName: 'widget',
       },
       sandboxStatus: null,
+      sandboxModeStatus: {
+        reasonCode: 'missing_sandbox',
+        message: 'A live sandbox is unavailable because no sandbox is ready for this repository yet. Sync the repository to provision one.',
+      },
       chatModes: {
         availableModes: ['discuss', 'docs'],
         defaultMode: 'docs',
@@ -129,6 +134,10 @@ describe('useThreadCapabilities — bridging behavior', () => {
         sourceRepoName: 'widget',
       },
       sandboxStatus: 'ready',
+      sandboxModeStatus: {
+        reasonCode: 'available',
+        message: null,
+      },
       chatModes: {
         availableModes: ['discuss', 'docs', 'sandbox'],
         defaultMode: 'docs',
@@ -153,6 +162,11 @@ describe('useThreadCapabilities — bridging behavior', () => {
         sourceRepoName: 'widget',
       },
       sandboxStatus: 'provisioning',
+      sandboxModeStatus: {
+        reasonCode: 'sandbox_provisioning',
+        message:
+          'A live sandbox is unavailable because the sandbox is still provisioning. Wait for the import to finish or sync the repository again.',
+      },
       chatModes: {
         availableModes: ['discuss', 'docs'],
         defaultMode: 'docs',
@@ -182,6 +196,11 @@ describe('useThreadCapabilities — bridging behavior', () => {
       // hands back the schema status verbatim and trusts disabledReasons to
       // carry the user-visible explanation.
       sandboxStatus: 'stopped',
+      sandboxModeStatus: {
+        reasonCode: 'sandbox_expired',
+        message:
+          'A live sandbox is unavailable because the sandbox expired. Sync the repository to provision a fresh sandbox.',
+      },
       chatModes: {
         availableModes: ['discuss', 'docs'],
         defaultMode: 'docs',
@@ -206,6 +225,10 @@ describe('useThreadCapabilities — bridging behavior', () => {
         sourceRepoName: 'widget',
       },
       sandboxStatus: 'ready',
+      sandboxModeStatus: {
+        reasonCode: 'available',
+        message: null,
+      },
       chatModes: {
         availableModes: ['discuss', 'docs', 'sandbox'],
         defaultMode: 'docs',

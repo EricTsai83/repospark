@@ -16,7 +16,7 @@ import { useAsyncCallback } from '@/hooks/use-async-callback';
 import { useCheckForUpdates } from '@/hooks/use-check-for-updates';
 import { useRepositoryActions } from '@/hooks/use-repository-actions';
 import { useThreadCapabilities } from '@/hooks/use-thread-capabilities';
-import type { RepositoryId, ThreadId, ChatMode } from '@/lib/types';
+import type { RepositoryId, ThreadId, ChatMode, SandboxModeStatus } from '@/lib/types';
 import { toUserErrorMessage } from '@/lib/errors';
 
 type RepositoryWorkspaceStatus = 'initializing' | 'no-repo' | 'ready';
@@ -118,6 +118,10 @@ export function RepositoryShell({
     api.repositories.getRepositoryDetail,
     effectiveSelectedRepositoryId ? { repositoryId: effectiveSelectedRepositoryId } : 'skip',
   );
+  const effectiveSandboxModeStatus: SandboxModeStatus | null =
+    effectiveSelectedThreadId !== null
+      ? capabilities.sandboxModeStatus
+      : repoDetail?.sandboxModeStatus ?? null;
 
   // PRD US 27: most recent thread loads on landing. Runs only on `/chat` when
   // the owner has at least one thread; the redirect is `replace` so the user
@@ -332,8 +336,7 @@ export function RepositoryShell({
               disabledModeReasons={capabilities.disabledReasons}
               isSending={isSending}
               onSendMessage={handleSendMessage}
-              sandboxModeAvailable={repoDetail?.sandboxModeAvailable ?? true}
-              sandboxModeStatus={repoDetail?.sandboxModeStatus ?? null}
+              sandboxModeStatus={effectiveSandboxModeStatus}
               isSyncing={isSyncing}
               onSync={() => void handleSync()}
             />
@@ -375,8 +378,12 @@ export function RepositoryShell({
             }}
             analysisPrompt={analysisPrompt}
             onAnalysisPromptChange={setAnalysisPrompt}
-            sandboxAvailable={repoDetail !== undefined && repoDetail.sandboxModeAvailable}
-            sandboxReason={repoDetail?.sandboxModeStatus?.message ?? null}
+            sandboxModeStatus={
+              effectiveSandboxModeStatus ?? {
+                reasonCode: 'missing_sandbox',
+                message: 'A live sandbox is unavailable right now. Sync the repository to provision a fresh sandbox.',
+              }
+            }
             errorMessage={analysisError}
             isRunning={isRunningAnalysis}
             onRun={handleRunAnalysis}

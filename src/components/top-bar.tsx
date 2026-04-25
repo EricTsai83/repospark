@@ -17,6 +17,7 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 import { useRelativeTime } from '@/hooks/use-relative-time';
 import { RepoInfoPopover } from '@/components/repo-info-popover';
 import { RepoStatusIndicator } from '@/components/repo-status-indicator';
+import type { SandboxModeStatus } from '@/lib/types';
 
 export type TopBarRepoDetail = {
   repository: {
@@ -28,7 +29,7 @@ export type TopBarRepoDetail = {
     lastSyncedCommitSha?: string;
   };
   sandbox: { status: string; ttlExpiresAt: number; autoArchiveIntervalMinutes: number } | null;
-  sandboxModeAvailable: boolean;
+  sandboxModeStatus: SandboxModeStatus;
   hasRemoteUpdates: boolean;
   fileCount: number;
   fileCountLabel: string;

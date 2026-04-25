@@ -67,7 +67,6 @@ export function ChatPanel({
   disabledModeReasons,
   isSending,
   onSendMessage,
-  sandboxModeAvailable,
   sandboxModeStatus,
   isSyncing,
   onSync,
@@ -84,19 +83,19 @@ export function ChatPanel({
   disabledModeReasons: Partial<Record<ChatMode, string>>;
   isSending: boolean;
   onSendMessage: (e: FormEvent<HTMLFormElement>) => Promise<void>;
-  sandboxModeAvailable: boolean;
   sandboxModeStatus: SandboxModeStatus | null;
   isSyncing: boolean;
   onSync: () => void;
 }) {
   const hasMessages = (messages?.length ?? 0) > 0;
   const availableModeSet = new Set(availableModes);
+  const sandboxModeAvailable = sandboxModeStatus?.reasonCode === 'available';
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 overflow-y-auto">
         <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-3 px-6 py-6">
-          {!isChatLoading && chatMode === 'sandbox' && !sandboxModeAvailable ? (
+          {!isChatLoading && chatMode === 'sandbox' && sandboxModeStatus && !sandboxModeAvailable ? (
             <AppNotice
               title={getSandboxStatusTitle(sandboxModeStatus?.reasonCode)}
               message={

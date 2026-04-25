@@ -97,8 +97,8 @@ export function RepoInfoPopover({
           ) : null}
           <InfoRow
             label="Sandbox mode"
-            value={repoDetail.sandboxModeAvailable ? 'Available' : 'Unavailable'}
-            highlight={repoDetail.sandboxModeAvailable ? 'positive' : 'negative'}
+            value={repoDetail.sandboxModeStatus.reasonCode === 'available' ? 'Available' : 'Unavailable'}
+            highlight={repoDetail.sandboxModeStatus.reasonCode === 'available' ? 'positive' : 'negative'}
           />
         </div>
       </PopoverContent>

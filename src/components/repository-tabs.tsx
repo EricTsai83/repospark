@@ -24,7 +24,6 @@ export function RepositoryTabs({
   disabledModeReasons,
   isSending,
   onSendMessage,
-  sandboxModeAvailable,
   sandboxModeStatus,
   isSyncing,
   onSync,
@@ -45,7 +44,6 @@ export function RepositoryTabs({
   disabledModeReasons: Partial<Record<ChatMode, string>>;
   isSending: boolean;
   onSendMessage: (e: FormEvent<HTMLFormElement>) => Promise<void>;
-  sandboxModeAvailable: boolean;
   sandboxModeStatus: SandboxModeStatus | null;
   isSyncing: boolean;
   onSync: () => void;
@@ -72,7 +70,6 @@ export function RepositoryTabs({
           disabledModeReasons={disabledModeReasons}
           isSending={isSending}
           onSendMessage={onSendMessage}
-          sandboxModeAvailable={sandboxModeAvailable}
           sandboxModeStatus={sandboxModeStatus}
           isSyncing={isSyncing}
           onSync={onSync}

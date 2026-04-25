@@ -4,7 +4,7 @@ import type { DataModel, Id, TableNames } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { mutation, query, internalQuery, internalMutation, type MutationCtx } from './_generated/server';
 import { requireViewerIdentity } from './lib/auth';
-import { getSandboxAvailability } from './lib/sandboxAvailability';
+import { getSandboxModeStatus } from './lib/sandboxAvailability';
 import { makeRepositoryTitle, parseGitHubUrl } from './lib/github';
 import { CASCADE_BATCH_SIZE } from './lib/constants';
 import {
@@ -190,7 +190,7 @@ export const getRepositoryDetail = query({
 
     const sandbox = repository.latestSandboxId ? await ctx.db.get(repository.latestSandboxId) : null;
 
-    const sandboxModeStatus = getSandboxAvailability(sandbox);
+    const sandboxModeStatus = getSandboxModeStatus(sandbox);
 
     // Determine whether the remote has commits we haven't synced yet
     const hasRemoteUpdates =
@@ -205,11 +205,7 @@ export const getRepositoryDetail = query({
       threads,
       fileCount,
       fileCountLabel,
-      sandboxModeAvailable: sandboxModeStatus.available,
-      sandboxModeStatus: {
-        reasonCode: sandboxModeStatus.reasonCode,
-        message: sandboxModeStatus.message,
-      },
+      sandboxModeStatus,
       hasRemoteUpdates,
       sandbox: sandbox
         ? {
