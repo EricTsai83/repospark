@@ -71,21 +71,14 @@ export function AttachRepoMenu({
     try {
       await setThreadRepository({ threadId, repositoryId: repoId });
     } catch (err) {
-      if (latestRequestRef.current !== requestId) {
-        return;
+      if (latestRequestRef.current === requestId) {
+        setErrorState({
+          threadId,
+          message: toUserErrorMessage(err, 'Failed to update repository.'),
+        });
       }
-      setErrorState({
-        threadId,
-        message: toUserErrorMessage(err, 'Failed to update repository.'),
-      });
-    } finally {
-      if (latestRequestRef.current !== requestId) {
-        return;
-      }
-      setPendingRequest((current) =>
-        current?.requestId === requestId ? null : current,
-      );
     }
+    setPendingRequest((current) => (current?.requestId === requestId ? null : current));
   };
 
   const swapTargets = attachedRepository

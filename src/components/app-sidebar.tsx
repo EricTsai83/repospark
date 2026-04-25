@@ -165,7 +165,7 @@ function ThreadsSection({
   onDeleteThread: (id: ThreadId) => void;
 }) {
   const previousThreadCountRef = useRef<number | null>(null);
-  const [liveStatus, setLiveStatus] = useState('');
+  const liveRegionRef = useRef<HTMLSpanElement | null>(null);
 
   useEffect(() => {
     if (threads === undefined) {
@@ -181,18 +181,18 @@ function ThreadsSection({
 
     const delta = threads.length - previousCount;
     const count = Math.abs(delta);
-    setLiveStatus(
+    const message =
       delta > 0
         ? `${count} new conversation${count === 1 ? '' : 's'}. ${threads.length} total.`
-        : `${count} conversation${count === 1 ? '' : 's'} removed. ${threads.length} total.`,
-    );
+        : `${count} conversation${count === 1 ? '' : 's'} removed. ${threads.length} total.`;
+    if (liveRegionRef.current) {
+      liveRegionRef.current.textContent = message;
+    }
   }, [threads]);
 
   return (
     <div className="flex flex-col gap-1 p-3">
-      <span className="sr-only" role="status" aria-live="polite">
-        {liveStatus}
-      </span>
+      <span ref={liveRegionRef} className="sr-only" role="status" aria-live="polite" />
       <div className="flex items-center justify-between px-1 pb-1">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Threads
