@@ -2,40 +2,40 @@
 
 Ask the repo, not the internet.
 
-RepoSpark is a repository-centered architecture analysis app. A user signs in with WorkOS, connects a GitHub App installation, imports a repository into a Daytona sandbox, indexes the codebase into Convex, and then explores the project through two complementary analysis modes:
+RepoSpark is an open source repository analysis app for understanding unfamiliar codebases through grounded, repository-specific context. A user signs in with WorkOS, connects a GitHub App installation, imports a repository into a Daytona sandbox, indexes the codebase into Convex, and then explores it in two modes:
 
-- `Quick chat`: grounded answers from indexed artifacts, code chunks, and recent thread history
-- `Deep analysis`: focused inspection against a live sandbox when the repository needs deeper validation
+- `Quick chat`: answer questions from indexed files, chunks, artifacts, and recent thread history
+- `Deep analysis`: inspect a live sandbox when indexed data is not enough
 
-The app is built as a single React frontend plus a Convex backend. Convex handles database storage, backend logic, background jobs, cron tasks, and HTTP endpoints, so there is no separate Express or Nest service.
+The app uses a React frontend and a Convex backend. Convex owns the database, backend functions, background jobs, cron work, and HTTP endpoints, so there is no separate Express or Nest server in this repo.
 
 ## Status
 
-RepoSpark is an early-access open source project. Core repository import, chat, artifact generation, sync, and sandbox lifecycle flows are implemented. Sandbox reliability and Daytona webhook reconciliation are still active areas of iteration.
+RepoSpark is an early-access project. Repository import, chat, artifact generation, sync, and sandbox lifecycle flows are implemented. Sandbox reliability and Daytona webhook reconciliation are still active areas of iteration.
 
-The repository is standardized on Bun as its package manager and script runner.
+This repository is standardized on Bun for package management and script execution.
 
-## Core capabilities
+## What RepoSpark does
 
 - Import GitHub repositories through a GitHub App instead of personal access tokens
-- Index repository structure, files, chunks, and long-lived analysis artifacts
-- Ask grounded questions about architecture, data flow, and risk areas
-- Run deep analysis in a live Daytona sandbox when indexed data is not enough
-- Persist threads, messages, jobs, and analysis artifacts for later review
-- Sync imported repositories against newer remote commits
-- Reconcile sandbox lifecycle with a mix of request-path cleanup, webhooks, and cron sweeps
+- Index repository structure, files, chunks, summaries, and reusable analysis artifacts
+- Answer architecture, data-flow, and risk-oriented questions from grounded repository data
+- Run sandbox-backed deep analysis when indexed data needs live validation
+- Persist threads, messages, jobs, and artifacts for later review
+- Sync imported repositories against newer upstream commits
+- Reconcile sandbox lifecycle through request-path cleanup, webhooks, and cron sweeps
 
-## How it works
+## End-to-end flow
 
 1. The user signs in with WorkOS AuthKit.
 2. The user connects a GitHub App installation.
 3. RepoSpark verifies repository access and creates an import workflow.
 4. A Daytona sandbox is provisioned and the repository is cloned.
-5. The import pipeline scans the repository and writes summaries, artifacts, files, and chunks into Convex.
-6. The user can ask questions in `Quick chat` or run `Deep analysis`.
-7. Later syncs refresh the active repository snapshot without mixing old and new import data.
+5. The import pipeline scans the repository and writes files, chunks, summaries, and artifacts into Convex.
+6. The user explores the repository in `Quick chat` or `Deep analysis`.
+7. Later syncs refresh the active snapshot without mixing old and new import data.
 
-## Architecture
+## Stack
 
 ### Frontend
 
@@ -48,21 +48,21 @@ The repository is standardized on Bun as its package manager and script runner.
 ### Backend
 
 - Convex queries, mutations, actions, internal actions, HTTP actions, and cron jobs
-- Convex as the app database, backend runtime, scheduler, and integration entrypoint
+- Convex as the database, backend runtime, scheduler, and integration entrypoint
 
-### External integrations
+### External services
 
 - WorkOS AuthKit for browser-side sign-in
 - GitHub App for repository authorization and installation lifecycle
 - Daytona for repository sandboxes and deep inspection
-- OpenAI for chat generation, with a heuristic fallback when no API key is configured
+- OpenAI for model-backed chat generation, with a heuristic fallback when no API key is configured
 
-## Project structure
+## Repository layout
 
 ```text
 .
-├── src/        # React app, routes, layout, and UI
-├── convex/     # Convex schema, functions, actions, HTTP endpoints, and crons
+├── src/        # React app, routing, layout, and UI
+├── convex/     # Convex schema, backend functions, HTTP endpoints, and crons
 ├── docs/       # System design and architecture documentation
 ├── public/     # Static assets
 └── .env.example
@@ -70,9 +70,9 @@ The repository is standardized on Bun as its package manager and script runner.
 
 ## Prerequisites
 
-Before running the app locally, make sure you have:
+Before running RepoSpark locally, make sure you have:
 
-- Node.js and npm
+- Bun 1.3+
 - A Convex deployment
 - A WorkOS application
 - A GitHub App with installation access to the repositories you want to import
@@ -87,26 +87,26 @@ Before running the app locally, make sure you have:
 bun install
 ```
 
-### 2. Configure frontend environment variables
+### 2. Configure frontend variables
 
-Copy `.env.example` to `.env` and fill in the browser-exposed values:
+Copy `.env.example` to `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Required frontend variables:
+The frontend reads these browser-exposed values from `.env`:
 
 - `VITE_CONVEX_URL`
 - `VITE_WORKOS_CLIENT_ID`
 
-`env.ts` validates these values at build time.
+`env.ts` validates them at build time. In local development, `npx convex dev` will usually write `VITE_CONVEX_URL` for you automatically.
 
-### 3. Configure Convex runtime environment variables
+### 3. Configure Convex runtime variables
 
-Do not keep backend secrets only in `.env`. Set them in the Convex environment with `npx convex env set` or in the Convex dashboard.
+Backend secrets should not live only in `.env`. Set them in the Convex environment with `npx convex env set` or through the Convex dashboard.
 
-Required or commonly used Convex runtime variables:
+Common runtime variables:
 
 - WorkOS
   - `WORKOS_CLIENT_ID`
@@ -132,7 +132,7 @@ Required or commonly used Convex runtime variables:
   - `DAYTONA_DISK_GIB`
   - `DAYTONA_NETWORK_ALLOW_LIST`
 
-Rate limit and lease overrides are also supported in Convex runtime env:
+Optional rate-limit and lease overrides are also supported:
 
 - `RATE_LIMIT_IMPORT_PER_HOUR`
 - `RATE_LIMIT_DEEP_ANALYSIS_PER_HOUR`
@@ -144,31 +144,34 @@ Rate limit and lease overrides are also supported in Convex runtime env:
 - `CHAT_JOB_LEASE_MS`
 - `DEEP_ANALYSIS_JOB_LEASE_MS`
 
+The fully annotated example lives in `.env.example`.
+
 ### 4. Start the app
 
 ```bash
 bun run dev
 ```
 
-This runs the frontend and backend together:
+This starts both app runtimes:
 
 - `vite --open`
 - `convex dev`
 
-The `predev` hook also waits for Convex to be ready and opens the Convex dashboard.
+The `predev` hook waits for Convex to become ready and opens the Convex dashboard.
 
-## Integration endpoints
+## Important local URLs and callbacks
 
-When wiring external services, these are the important routes:
+When wiring external services, these are the main endpoints:
 
-- WorkOS redirect URI: usually `http://localhost:5173/callback` for local development
+- App URL: usually `http://localhost:5173`
+- WorkOS redirect URI: `http://localhost:5173/callback`
 - GitHub App callback: `https://<your-convex-site>/api/github/callback`
 - GitHub App webhook: `https://<your-convex-site>/api/github/webhook`
 - Daytona webhook: `https://<your-convex-site>/api/daytona/webhook`
 
-For GitHub App installation, the frontend sends its current origin when the install flow starts. The Convex callback stores that origin in the OAuth state and redirects back to it after installation. If GitHub calls back without a usable state, the HTTP endpoint now returns an explicit error response instead of guessing a frontend URL.
+For GitHub App installation, the frontend sends its current origin when the install flow starts. The Convex callback stores that origin in OAuth state and redirects back to it after installation. If GitHub calls back without a usable state, the endpoint returns an explicit error instead of guessing a frontend URL.
 
-Configure Daytona/Svix to sign deliveries for that endpoint, then store the endpoint signing secret in `DAYTONA_WEBHOOK_SIGNING_SECRET`. `DAYTONA_WEBHOOK_ORGANIZATION_ID` can be used as an additional allowlist check.
+For Daytona, configure Svix signing on the webhook endpoint and store the signing secret in `DAYTONA_WEBHOOK_SIGNING_SECRET`. `DAYTONA_WEBHOOK_ORGANIZATION_ID` can be used as an additional allowlist check.
 
 ## Available scripts
 
@@ -186,25 +189,21 @@ Configure Daytona/Svix to sign deliveries for that endpoint, then store the endp
 | `bun run preview` | Preview the production build |
 | `bun run format` | Format the repo with Prettier |
 
-## Authentication and access model
+## Access and analysis model
 
 - Users sign in through WorkOS AuthKit in the browser.
 - The frontend passes the WorkOS access token into Convex.
 - Convex validates that token as a custom JWT.
-- Repository access is enforced through GitHub App installation state, not user-provided personal tokens.
+- Repository access is enforced through GitHub App installation state, not personal access tokens.
 - Most backend flows derive the current owner from authenticated identity and verify ownership server-side.
-
-## Sandbox and analysis model
-
-- Every import creates a snapshot-oriented workflow instead of mutating repository knowledge in place.
-- Indexed knowledge is persisted in Convex as repository summaries, artifacts, files, and chunks.
-- `Quick chat` uses that indexed knowledge layer.
-- `Deep analysis` depends on a usable Daytona sandbox and stores its output back as a reusable artifact.
-- Cleanup and reconciliation rely on cron jobs plus webhook-driven convergence so Daytona resources do not drift too far from Convex state.
+- Every import creates a new snapshot-oriented workflow instead of mutating repository knowledge in place.
+- `Quick chat` reads from indexed repository knowledge stored in Convex.
+- `Deep analysis` depends on a usable Daytona sandbox and stores its result back as a reusable artifact.
+- Cleanup and reconciliation rely on cron jobs plus webhook-driven convergence so external Daytona resources do not drift too far from Convex state.
 
 ## Recommended reading
 
-Start with the system design docs in `docs/`:
+If you want the broader architecture, start with the system design docs in `docs/`:
 
 1. `docs/system-overview.md`
 2. `docs/domain-and-data-model.md`
@@ -218,12 +217,12 @@ The document index lives in `docs/README.md`.
 
 ## Deployment model
 
-The current deployment model is intentionally simple:
+The deployment model is intentionally simple:
 
-- frontend: static Vite build
-- backend: Convex cloud
-- external services: WorkOS, GitHub, Daytona, and OpenAI
-- hosting/CD: Vercel Git integration running `bun run build:vercel`
+- Frontend: static Vite build
+- Backend: Convex cloud
+- External services: WorkOS, GitHub, Daytona, and OpenAI
+- Hosting and CD: Vercel Git integration running `bun run build:vercel`
 - SPA deep links: handled by `vercel.json` rewrites
 
 There is no separate always-on custom API server in front of the backend.
