@@ -94,6 +94,25 @@ function looksLikePemPrivateKey(value: string): boolean {
   return /^-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/.test(value);
 }
 
+function normalizeReturnToOrigin(returnTo: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(returnTo);
+  } catch {
+    throw new Error('returnTo must be an absolute URL.');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('returnTo must use http or https.');
+  }
+
+  if (parsed.username || parsed.password) {
+    throw new Error('returnTo must not include username or password.');
+  }
+
+  return parsed.origin;
+}
+
 // ---------------------------------------------------------------------------
 // Installation access token helper
 // ---------------------------------------------------------------------------
@@ -162,8 +181,10 @@ export const getInstallationToken = internalAction({
  * installation_id and state.
  */
 export const initiateGitHubInstall = action({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    returnTo: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
     const identity = await requireViewerIdentity(ctx);
 
     const slug = process.env.GITHUB_APP_SLUG;
@@ -177,11 +198,13 @@ export const initiateGitHubInstall = action({
     const stateBytes = new Uint8Array(32);
     crypto.getRandomValues(stateBytes);
     const state = Array.from(stateBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+    const normalizedReturnTo = args.returnTo ? normalizeReturnToOrigin(args.returnTo) : undefined;
 
     // Store the state for later validation (10-minute expiry)
     await ctx.runMutation(internal.github.createOAuthState, {
       state,
       ownerTokenIdentifier: identity.tokenIdentifier,
+      returnTo: normalizedReturnTo,
     });
 
     const url = `https://github.com/apps/${slug}/installations/new?state=${state}`;

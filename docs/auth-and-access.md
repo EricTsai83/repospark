@@ -32,7 +32,7 @@ flowchart TD
 The frontend wraps the application with `AuthKitProvider` in `src/main.tsx` and uses:
 
 - `VITE_WORKOS_CLIENT_ID`
-- `VITE_WORKOS_REDIRECT_URI`
+- the current browser origin to build `/callback`
 
 WorkOS is the source of the browser-side sign-in experience.
 
@@ -106,12 +106,14 @@ Repospark does not ask users to provide a GitHub personal access token. Instead,
 ### Installation flow
 
 1. A signed-in user calls `initiateGitHubInstall`.
-2. The backend generates a random state and stores it in `githubOAuthStates`.
+2. The backend generates a random state and stores it in `githubOAuthStates` together with the frontend origin that started the flow.
 3. The user is redirected to the GitHub App installation page.
 4. After installation, GitHub redirects back to `/api/github/callback`.
 5. The callback validates and consumes the state.
 6. The backend fetches installation details from the GitHub API.
 7. The installation is written into `githubInstallations`.
+8. The callback redirects back to the stored frontend origin.
+9. If GitHub calls back without a usable state, the HTTP endpoint returns an explicit error response instead of guessing a frontend URL.
 
 ### Why `githubOAuthStates` exists
 
@@ -119,6 +121,7 @@ This table exists for callback CSRF protection rather than long-term business da
 
 - `state`
 - `ownerTokenIdentifier`
+- `returnTo`
 - `expiresAt`
 - `consumed`
 
@@ -167,7 +170,6 @@ These values are exposed to the browser:
 
 - `VITE_CONVEX_URL`
 - `VITE_WORKOS_CLIENT_ID`
-- `VITE_WORKOS_REDIRECT_URI`
 
 ### Convex runtime env
 
@@ -178,7 +180,6 @@ These values must exist only in the Convex runtime. This list intentionally matc
 - `GITHUB_APP_SLUG`
 - `GITHUB_APP_PRIVATE_KEY`
 - `GITHUB_APP_WEBHOOK_SECRET`
-- `SITE_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `DAYTONA_API_KEY`

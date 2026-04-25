@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "packageManager": "bun@1.3.10",
   "license": "MIT",
   "homepage": "https://github.com/workos/template-convex-react-vite-authkit/#readme",
   "repository": {
@@ -20,7 +21,8 @@
     "typecheck": "tsc -b",
     "typecheck:convex": "tsc -p convex/tsconfig.json --noEmit",
     "build": "tsc -b && vite build",
-    "lint": "npm run typecheck && npm run typecheck:convex && eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "build:vercel": "bunx convex deploy --cmd 'bun run build' --cmd-url-env-var-name VITE_CONVEX_URL",
+    "lint": "bun run typecheck && bun run typecheck:convex && eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "test": "vitest run",
     "preview": "vite preview",
     "format": "prettier --write ."

@@ -1,140 +1,121 @@
-# Plan 10 — Lawn-Style Vercel + Convex Deployment
+# Plan 10 — Reviewed Vercel + Convex Deployment
 
 - **Priority**: P2
-- **Scope**: `package.json`, `vercel.json`（新）, `.env.example`, `README.md`, `docs/integrations-and-operations.md`。
+- **Status**: revise before implementation
+- **Scope**: `package.json`, `vercel.json`（new）, frontend auth bootstrap, GitHub callback redirect design, deployment docs
+- **Related design doc**: `docs/vercel-convex-deployment-system-design.md`
 - **Conflicts**:
-  - `package.json`: 與任何 script / build 流程改動衝突。
-  - `README.md`: 若有人同時在重寫專案 setup/deploy 說明，容易衝突。
-  - `docs/integrations-and-operations.md`: 若同時在調整 deployment model 章節，需合併。
+  - `package.json`: any script or build flow changes
+  - `README.md`: any setup/deploy rewrite
+  - `docs/integrations-and-operations.md`: any deployment model rewrite
 - **Dependencies**:
-  - 現有 `convex.json` 已經有 `preview` / `prod` 的 Vercel `buildEnv` 整合，這份 plan 直接沿用。
+  - `convex.json` already uses Vercel `buildEnv` for `preview` and `prod`
 
-## 背景
+## Review Verdict
 
-`pingdotgg/lawn` 的 production / CI/CD 做法非常簡單：
+The overall direction is correct, but the original version is **not** ready for direct implementation as a long-term best practice.
 
-1. 不用 GitHub Actions。
-2. 直接把 GitHub repo 接到 Vercel。
-3. Vercel build 時先跑 `convex deploy`。
-4. `convex deploy` 完成後，把 deployment URL 注入前端 build。
-5. 再產出靜態前端。
+Three parts need to be corrected first:
 
-對 Repospark 而言，這個模型是可直接套用的，因為目前架構本來就是：
+1. **SPA fallback should use `rewrites`, not `routes`**  
+   Vercel's current docs recommend `rewrites` for Vite SPA deep-link fallback.
+2. **The plan mixes two different callback problems**  
+   WorkOS browser redirect and GitHub App server callback should not be solved with the same environment-variable strategy.
+3. **GitHub callback must redirect from state, not from a guessed frontend URL**  
+   If preview deployments matter, the callback should redirect back to the **origin that started the flow**, not to one shared URL.
 
-- frontend: Vite static app
+So the right next step is:
+
+- revise the deployment plan
+- leave a small system design document
+- implement only after the redirect ownership is clear
+
+## What Still Stays True
+
+These parts of the original idea are still good:
+
+1. Vercel should own frontend hosting and Git-triggered deploys.
+2. `convex deploy` should run inside the Vercel build.
+3. `VITE_CONVEX_URL` should be injected by `convex deploy`.
+4. Preview and production must use different Convex deploy keys.
+5. GitHub Actions, if added, should be CI-only and should not own production deploy.
+
+## Long-Term Design
+
+### A. Keep CD simple
+
+Repospark fits the same high-level model as `lawn`:
+
+- frontend: static Vite app
 - backend: Convex
-- auth/domain callbacks: Convex HTTP routes
-- 沒有另一台必須常駐的 Express / Nest API server
+- external callbacks: Convex HTTP routes
+- no separate always-on API server
 
-換句話說，Repospark 不需要額外自建 CI/CD 編排層，也不需要為部署再引入 Docker 或 GitHub Actions 才能上 production。
+That means the long-term deployment target should still be:
 
-## 目標
+- **Vercel** for hosting and deploy trigger
+- **Convex** for backend deploy and runtime
+- **optional GitHub Actions** for quality checks only
 
-把 Repospark 的部署方式收斂成和 `lawn` 同一種模型：
+### B. Build through `convex deploy`
 
-1. **Vercel 負責 frontend hosting 與 Git-based deploy trigger**
-2. **Convex deploy 直接內嵌在 Vercel build**
-3. **`VITE_CONVEX_URL`** 由 deploy 階段自動注入
-4. **Preview 與 Production 各自對應自己的 Convex deployment**
-5. **CD 保持最小化，由 Vercel 負責 deploy**
-6. **CI 若需要，僅用於品質檢查，不接手 production deploy**
-
-## 非目標
-
-- 不新增另一個 always-on backend server。
-- 不引入 Docker-based deployment。
-- 不在第一版建立複雜的 CI matrix。
-- 不把 production deploy 改成 GitHub Actions 主導。
-
-## 建議做法
-
-### A. 在 `package.json` 新增 `build:vercel`
-
-保留既有 `build`：
-
-- `build` 仍然負責 `tsc -b && vite build`
-
-新增一個給 Vercel 用的 wrapper script：
+`package.json` should still grow a Vercel-specific wrapper:
 
 ```json
-"build:vercel": "npx convex deploy --cmd 'npm run build' --cmd-url-env-var-name VITE_CONVEX_URL"
+"build:vercel": "bunx convex deploy --cmd 'bun run build' --cmd-url-env-var-name VITE_CONVEX_URL"
 ```
 
-這一步完全對應 `lawn` 的做法，只是把 `bun run build` 改成 Repospark 目前的 `npm run build`。
+Why this is still the right shape:
 
-### B. 新增 `vercel.json`
+- it keeps Convex deploy and frontend build in one pipeline
+- it avoids manually copying `VITE_CONVEX_URL`
+- it keeps preview and production deployment URLs aligned with the build that produced the frontend bundle
 
-新增一份最小設定：
+### C. Use `rewrites` in `vercel.json`
+
+The recommended Vercel config for this repo is:
 
 ```json
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build:vercel",
+  "buildCommand": "bun run build:vercel",
   "outputDirectory": "dist",
-  "routes": [
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/index.html" }
-  ]
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
 ```
 
-理由：
+Why:
 
-- `buildCommand`：讓 Vercel build 時先做 Convex deploy，再做前端 build。
-- `outputDirectory`：Repospark 的 Vite output 是 `dist`，不是 `dist/client`。
-- `routes` fallback：這個 repo 是 SPA，React Router 需要把未知路徑回寫到 `index.html`。
+- `buildCommand`: run Convex deploy before the Vite build
+- `outputDirectory`: Vite outputs to `dist`
+- `rewrites`: preferred Vercel SPA fallback for React Router deep links
 
-### C. Vercel 環境變數分層
+### D. Separate environment ownership clearly
 
-`lawn` 的重點不是只有 `CONVEX_DEPLOY_KEY`，而是**把 deploy key 依 Vercel environment 分開配置**。
+The original draft was too coupled here. Long-term maintainability is better if configuration is split by **who owns the value**.
 
-Repospark 也應該照做：
+#### 1. Vercel project env
 
-#### Preview environment
+Preview:
 
 - `CONVEX_DEPLOY_KEY=<preview deploy key>`
-- `VITE_WORKOS_CLIENT_ID=<public preview value>`
-- `VITE_VERCEL_BRANCH_URL=$VERCEL_BRANCH_URL`
+- `VITE_WORKOS_CLIENT_ID=<preview public value>`
 
-#### Production environment
+Production:
 
 - `CONVEX_DEPLOY_KEY=<production deploy key>`
-- `VITE_WORKOS_CLIENT_ID=<public production value>`
-- `VITE_VERCEL_PROJECT_PRODUCTION_URL=$VERCEL_PROJECT_PRODUCTION_URL`
+- `VITE_WORKOS_CLIENT_ID=<production public value>`
 
-重要原則：
+Important rules:
 
-- **不要**讓 Preview 與 Production 共用同一把 `CONVEX_DEPLOY_KEY`
-- `VITE_CONVEX_URL` 不需要手動填進 Vercel，交給 `convex deploy --cmd-url-env-var-name` 注入即可
-- **不要**在 Vercel dashboard 直接填 `VITE_WORKOS_REDIRECT_URI=https://${VERCEL_BRANCH_URL}/callback` 這種模板字串，Vercel 不會幫你展開
-- 改成在 frontend build / app code 內，透過 `import.meta.env.VITE_VERCEL_BRANCH_URL` 或 `import.meta.env.VITE_VERCEL_PROJECT_PRODUCTION_URL` 組出完整 callback URL（例如 `https://${host}/callback`），再把該值傳給 WorkOS / auth bootstrap
+- **Never** share one `CONVEX_DEPLOY_KEY` across preview and production
+- `VITE_CONVEX_URL` should **not** be entered manually in Vercel
+- Vercel **System Environment Variables must be exposed to the build**, otherwise `VERCEL_BRANCH_URL` and `VERCEL_PROJECT_PRODUCTION_URL` will not be available where `convex.json` expects them
 
-例如：
+#### 2. Convex runtime env
 
-```ts
-const vercelHost =
-  import.meta.env.VITE_VERCEL_BRANCH_URL ??
-  import.meta.env.VITE_VERCEL_PROJECT_PRODUCTION_URL;
-const redirectUri = vercelHost ? `https://${vercelHost}/callback` : import.meta.env.VITE_WORKOS_REDIRECT_URI;
-```
+Preview and production deployments each need their own runtime configuration for secrets and server-side integrations, including:
 
-### D. Convex deployment 環境也要對齊
-
-這個 repo 已經在 `convex.json` 內宣告：
-
-- `preview` 使用 `VERCEL_BRANCH_URL`
-- `prod` 使用 `VERCEL_PROJECT_PRODUCTION_URL`
-
-因此實作時應維持兩套 Convex deployment：
-
-1. **preview Convex deployment**
-2. **production Convex deployment**
-
-而且各自要有對應的 Convex runtime env。
-
-至少要確認：
-
-- `SITE_URL`
 - `WORKOS_CLIENT_ID`
 - `GITHUB_APP_ID`
 - `GITHUB_APP_SLUG`
@@ -146,128 +127,102 @@ const redirectUri = vercelHost ? `https://${vercelHost}/callback` : import.meta.
 - `DAYTONA_API_URL`
 - `DAYTONA_TARGET`
 
-其中 `SITE_URL` 尤其重要，因為 `convex/http.ts` 的 GitHub callback redirect 會用到它。  
-Preview deployment 的 `SITE_URL` 應該指向 preview domain，production deployment 的 `SITE_URL` 應該指向正式網域。
+The key design rule is:
 
-### E. CI/CD 模型就採用 Vercel Git Integration
+- keep secrets in Convex runtime env
+- keep browser-exposed values in Vercel env
+- do not duplicate the same domain logic in both places unless there is a clear reason
 
-照 `lawn` 的方式，Repospark 的最小 CD 應該是：
+### E. Treat WorkOS callback and GitHub callback as two different designs
 
-1. push branch
-2. Vercel 產生 preview deployment
-3. Vercel 執行 `npm run build:vercel`
-4. 先 `convex deploy`
-5. 再 `npm run build`
-6. 輸出 `dist`
-7. Vercel 提供 preview URL
+This is the biggest correction.
 
-Production 則是：
+#### E-1. WorkOS browser redirect
 
-1. merge / push 到 production branch
-2. Vercel 觸發 production build
-3. 用 production `CONVEX_DEPLOY_KEY` 部署 Convex
-4. build frontend
-5. 發佈正式站點
+For the browser-side auth callback, the frontend already knows its own origin at runtime.
 
-這個模型下：
+So the preferred long-term model is:
 
-- **CD** 由 Vercel 完成
-- **backend deploy** 由 Vercel build 內的 `convex deploy` 完成
-- **GitHub Actions 若存在，也只負責 CI 檢查**
+- derive redirect URI from `window.location.origin`
+- use `new URL('/callback', window.location.origin).toString()`
 
-### E-1. 建議補一條最小 CI，但只做檢查
+Why this is better:
 
-雖然 `lawn` 本身沒有在 repo 內放 GitHub Actions，但對 Repospark 來說，**最佳實踐仍然是補一條輕量 CI**，專門做品質 gate，而不是做 deploy。
+- no need to create `VITE_VERCEL_BRANCH_URL`
+- no duplicated branch-domain logic in frontend build config
+- local dev, preview, and production all use the same rule
 
-建議原則：
+`convex.json` should continue to use `buildEnv.VERCEL_BRANCH_URL` and `buildEnv.VERCEL_PROJECT_PRODUCTION_URL` for WorkOS/AuthKit-side allowlisted URLs. That is a provider configuration problem, not a frontend runtime problem.
 
-- **CI**：跑 `lint` / `test` / `build`
-- **CD**：仍由 Vercel + Convex 處理
-- **不要**在 GitHub Actions 裡持有 production deploy 權限，除非之後真的有多環境 release orchestration 需求
+#### E-2. GitHub App callback redirect
 
-依照目前 `package.json`，最小可行檢查組合可直接用現有 scripts：
+This one is different because the callback lands on **Convex**, not on the frontend.
 
-1. `npm ci`
-2. `npm run lint`
-3. `npm run test`
-4. `npm run build`
+The current implementation should not depend on one global frontend URL, because that is not robust for multi-preview operation.
 
-補充：
+The better long-term model is:
 
-- `npm run lint` 目前已經串了 `typecheck` 與 `typecheck:convex`，因此不一定要再額外跑一次獨立 typecheck job
-- `npm run build` 應保留在 CI，因為它能提早發現 Vite / TS build 階段才會出現的錯誤
-- 若之後測試量變大，再把 `lint`、`test`、`build` 拆成平行 jobs 即可；第一版不需要
+1. frontend starts GitHub install from its current origin
+2. backend stores that origin together with the OAuth state
+3. GitHub redirects to Convex callback
+4. Convex validates the state
+5. Convex redirects back to the stored origin
 
-實務上建議把這條 CI 掛在：
+That means preview correctness should come from state-bound `returnTo`, not from manually maintaining per-branch server env.
 
-- pull request
-- push 到主要開發分支
+This is the main reason the original plan should not be implemented as-is.
 
-而 branch protection 可要求：
+### F. CI remains separate from CD
 
-- CI workflow 必須通過後才能 merge
+The recommended split stays simple:
 
-這樣的分工最穩定：
+- **CI**: `bun install --frozen-lockfile`, `bun run lint`, `bun run test`, `bun run build`
+- **CD**: Vercel Git integration + `convex deploy`
 
-- GitHub Actions 負責「檢查這次變更有沒有壞掉」
-- Vercel 負責「把通過合併的版本部署出去」
-- Convex deploy 仍然跟著 Vercel build 一起走，避免把 deploy 權限與 app hosting 流程拆散
+This keeps:
 
-### F. 文件同步
+- deploy permissions out of GitHub Actions
+- production delivery tied to the same host that serves the frontend
+- operational ownership easier to understand
 
-若採用這個方案，建議同步補三個地方：
+## Recommended Implementation Order
 
-#### 1. `README.md`
+### Phase 1: deployment baseline
 
-補一個簡短 deployment section，說明：
+1. Add `build:vercel` to `package.json`
+2. Add `vercel.json` with `rewrites`
+3. Create separate preview and production `CONVEX_DEPLOY_KEY`
+4. Enable Vercel system environment variables for the build
 
-- production / preview 都走 Vercel
-- Vercel build 會呼叫 `npm run build:vercel`
-- `CONVEX_DEPLOY_KEY` 需要在 Vercel 設定
+### Phase 2: callback hardening
 
-#### 2. `.env.example`
+5. Change frontend WorkOS bootstrap to derive redirect URI from runtime origin
+6. Change GitHub install state to store `returnTo`
+7. Change GitHub callback to redirect to stored `returnTo`, and return an explicit error when no usable state exists
 
-補註解說明：
+### Phase 3: docs and quality gates
 
-- `VITE_CONVEX_URL` 在本地可手動設定
-- 在 Vercel build 中由 `convex deploy` 自動注入
+8. Update `README.md`
+9. Update `.env.example`
+10. Update `docs/integrations-and-operations.md`
+11. Optionally add a minimal CI workflow for `lint`, `test`, and `build`
 
-#### 3. `docs/integrations-and-operations.md`
+## Validation
 
-把 `Minimal Deployment Model` 從抽象描述改成更明確的現況 / 目標模型：
+- pushing a branch creates a Vercel preview deployment
+- preview build uses the preview `CONVEX_DEPLOY_KEY`
+- production build uses the production `CONVEX_DEPLOY_KEY`
+- the frontend receives `VITE_CONVEX_URL` from `convex deploy`
+- React Router deep links do not 404 on Vercel
+- WorkOS callback resolves to the current frontend origin
+- GitHub install started from a preview returns to that same preview
+- GitHub Actions, if present, perform checks only and do not deploy
 
-- frontend hosting: Vercel
-- backend: Convex cloud
-- CI checks: optional GitHub Actions for lint / test / build only
-- deploy trigger: Vercel Git integration
-- no additional GitHub Actions pipeline required
+## Out Of Scope
 
-## 建議的實作順序
-
-1. `package.json`：加入 `build:vercel`
-2. 新增 `vercel.json`
-3. 在 Vercel 專案設定 preview / production 的 `CONVEX_DEPLOY_KEY`
-4. 補齊 Vercel 的 `VITE_WORKOS_`*
-5. 補齊 Convex preview / production runtime env
-6. 視需要新增最小 CI workflow（`lint` / `test` / `build`，不含 deploy）
-7. 更新 `README.md` 與 `.env.example`
-8. 更新 `docs/integrations-and-operations.md`
-
-## 驗證
-
-- push 任一 branch 後，Vercel 能建立 preview deployment。
-- preview build 使用 preview `CONVEX_DEPLOY_KEY`，不會誤 deploy 到 production Convex。
-- production build 使用 production `CONVEX_DEPLOY_KEY`。
-- build 完成後前端能正確讀到 `VITE_CONVEX_URL`。
-- React Router 直接打深層路由時，不會在 Vercel 得到 404。
-- GitHub callback redirect 會回到正確的 `SITE_URL`。
-- 若有加 CI，PR 上至少會跑 `npm run lint`、`npm run test`、`npm run build`，且不包含 deploy 步驟。
-
-## Out of Scope
-
-- Docker image build
-- 自架 runner
-- 多階段 release trains
-- 複雜的 smoke test / e2e gate
-- 用 GitHub Actions 直接接手 production deploy
+- Docker image deployment
+- self-hosted runners
+- multi-stage release trains
+- complex smoke-test or e2e gate design
+- moving production deploy ownership into GitHub Actions
 

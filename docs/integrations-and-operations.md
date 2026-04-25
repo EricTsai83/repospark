@@ -32,7 +32,7 @@ WorkOS provides the browser-side sign-in experience and access token. Repospark 
 
 ### Boundary
 
-- the frontend uses `VITE_WORKOS_CLIENT_ID` and `VITE_WORKOS_REDIRECT_URI`
+- the frontend uses `VITE_WORKOS_CLIENT_ID` and derives the callback URL from the current browser origin
 - the backend uses `WORKOS_CLIENT_ID` to construct the custom JWT issuer and JWKS configuration
 
 This gives the frontend and backend cleanly separated responsibilities:
@@ -77,7 +77,7 @@ flowchart TD
 The actual flow is:
 
 1. The user starts GitHub App installation from the frontend.
-2. The backend creates a random state and stores it in `githubOAuthStates`.
+2. The backend creates a random state and stores it in `githubOAuthStates` together with the frontend origin that started the flow.
 3. GitHub redirects to `/api/github/callback` after installation.
 4. The callback consumes the state and resolves the owner.
 5. The callback fetches installation details from GitHub.
@@ -85,6 +85,8 @@ The actual flow is:
   - connects or refreshes the same installation
   - or returns a conflict when the owner already has a different active installation
 7. conflict redirects use `?github_error=already_connected` instead of silently replacing the existing connection.
+8. callback redirects use the stored frontend origin when available.
+9. if GitHub calls back without a usable state, the HTTP route returns an explicit error response instead of guessing a frontend URL.
 
 ### Webhook flow
 
@@ -359,7 +361,6 @@ These values are exposed to the browser:
 
 - `VITE_CONVEX_URL`
 - `VITE_WORKOS_CLIENT_ID`
-- `VITE_WORKOS_REDIRECT_URI`
 
 ### Convex runtime env
 
@@ -370,7 +371,6 @@ These values must exist in the Convex environment, not frontend `.env.local`:
 - `GITHUB_APP_SLUG`
 - `GITHUB_APP_PRIVATE_KEY`
 - `GITHUB_APP_WEBHOOK_SECRET`
-- `SITE_URL`
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
 - `DAYTONA_API_KEY`
@@ -408,6 +408,8 @@ The minimum deployment structure implied by the current codebase is:
 - frontend: a static site built from Vite
 - backend: Convex cloud
 - external dependencies: WorkOS, GitHub, Daytona, and OpenAI
+- hosting/CD: Vercel Git integration calling `bun run build:vercel`
+- SPA routing fallback: `vercel.json` rewrites all unknown routes to `index.html`
 
 In other words, Repospark does not require another always-on API server. Convex already fills the roles of application backend, scheduler, HTTP endpoint host, and database.
 

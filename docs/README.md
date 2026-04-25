@@ -12,6 +12,12 @@ This folder contains the system design documentation for the current Repospark c
 6. `integrations-and-operations.md`
 7. `orphan-resource-handling.md`
 
+## Additional Focused Design Docs
+
+- `vercel-convex-deployment-system-design.md`
+  - Why is the Vercel + Convex deployment model simple but still a system-design concern?
+  - How should preview-safe callback URLs and environment ownership be split?
+
 ## What Each Document Answers
 
 ### `system-overview.md`
@@ -55,6 +61,11 @@ This folder contains the system design documentation for the current Repospark c
 - Why are orphan Daytona resources a system-design concern rather than a simple cleanup bug?
 - Which failure modes create orphan external resources?
 - How do DB-first provisioning, cleanup jobs, and reconciliation layers fit together?
+
+### `vercel-convex-deployment-system-design.md`
+
+- How should Vercel hosting and Convex deployment fit together without adding a second CD system?
+- Why should browser callback URLs and server callback redirects use different sources of truth?
 
 ## Writing Principles
 

@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { useGitHubConnection } from '@/hooks/use-github-connection';
+import { useAsyncCallback } from '@/hooks/use-async-callback';
 import type { RepositoryId, ThreadId } from '@/lib/types';
 
 type ImportSummary = {
@@ -86,10 +87,8 @@ function RepoRow({
   importSummary?: ImportSummary;
 }) {
   const ownerInitial = (repo.fullName.split('/')[0] ?? '?')[0].toUpperCase();
-  const hasCompletedImport =
-    importSummary?.importStatus === 'completed' || importSummary?.lastImportedAt !== undefined;
-  const isRunning =
-    importSummary?.importStatus === 'queued' || importSummary?.importStatus === 'running';
+  const hasCompletedImport = importSummary?.importStatus === 'completed' || importSummary?.lastImportedAt !== undefined;
+  const isRunning = importSummary?.importStatus === 'queued' || importSummary?.importStatus === 'running';
   const hasUpdates = hasCompletedImport && !!importSummary?.hasRemoteUpdates;
   const canRetryFailedSync = hasCompletedImport && importSummary?.importStatus === 'failed';
   const runningLabel = hasCompletedImport ? 'Syncing…' : 'Importing…';
@@ -100,11 +99,7 @@ function RepoRow({
     >
       {/* Avatar */}
       {repo.ownerAvatarUrl ? (
-        <img
-          src={repo.ownerAvatarUrl}
-          alt=""
-          className="h-8 w-8 shrink-0 rounded-full"
-        />
+        <img src={repo.ownerAvatarUrl} alt="" className="h-8 w-8 shrink-0 rounded-full" />
       ) : (
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
           {ownerInitial}
@@ -114,12 +109,8 @@ function RepoRow({
       {/* Repo name + metadata */}
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
         <span className="truncate text-sm font-medium">{repo.fullName}</span>
-        {repo.isPrivate && (
-          <LockIcon size={12} className="shrink-0 text-muted-foreground" weight="bold" />
-        )}
-        <span className="shrink-0 text-xs text-muted-foreground">
-          · {formatRelativeDate(repo.updatedAt)}
-        </span>
+        {repo.isPrivate && <LockIcon size={12} className="shrink-0 text-muted-foreground" weight="bold" />}
+        <span className="shrink-0 text-xs text-muted-foreground">· {formatRelativeDate(repo.updatedAt)}</span>
       </div>
 
       {/* Action area: status badge or import/sync button */}
@@ -133,7 +124,7 @@ function RepoRow({
           <Button
             variant="outline"
             size="sm"
-            className="min-w-[7.5rem] shrink-0 justify-center gap-1 text-xs"
+            className="min-w-30 shrink-0 justify-center gap-1 text-xs"
             disabled={isImporting}
             onClick={onImport}
           >
@@ -144,7 +135,7 @@ function RepoRow({
           <Button
             variant="outline"
             size="sm"
-            className="min-w-[7.5rem] shrink-0 justify-center gap-1 text-xs"
+            className="min-w-30 shrink-0 justify-center gap-1 text-xs"
             disabled={isImporting}
             onClick={onImport}
           >
@@ -161,7 +152,7 @@ function RepoRow({
         <Button
           variant="outline"
           size="sm"
-          className="min-w-[7.5rem] shrink-0 justify-center text-xs"
+          className="min-w-30 shrink-0 justify-center text-xs"
           disabled={isImporting}
           onClick={onImport}
         >
@@ -182,6 +173,7 @@ export function ImportRepoDialog({
   onImported: (repoId: RepositoryId, threadId: ThreadId | null) => void;
 }) {
   const createRepositoryImport = useMutation(api.repositories.createRepositoryImport);
+  const initiateGitHubInstall = useAction(api.githubAppNode.initiateGitHubInstall);
   const listRepos = useAction(api.githubAppNode.listInstallationRepos);
   const searchReposAction = useAction(api.githubAppNode.searchGitHubRepos);
   const verifyAccess = useAction(api.githubAppNode.verifyRepoAccess);
@@ -192,6 +184,7 @@ export function ImportRepoDialog({
   // --- Shared state ---
   const [importError, setImportError] = useState<string | null>(null);
   const [importingRepo, setImportingRepo] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
 
   // --- Authorized repos (fetched once on dialog open) ---
   const [authorizedRepos, setAuthorizedRepos] = useState<RepoInfo[] | null>(null);
@@ -229,6 +222,18 @@ export function ImportRepoDialog({
 
   // Track the latest search request to avoid stale results
   const latestSearchRef = useRef(0);
+
+  const [isConnectingGitHub, handleConnectGitHub] = useAsyncCallback(async () => {
+    setConnectError(null);
+    try {
+      const redirectUrl = await initiateGitHubInstall({
+        returnTo: window.location.origin,
+      });
+      window.location.assign(redirectUrl);
+    } catch (error) {
+      setConnectError(error instanceof Error ? error.message : 'Failed to connect GitHub.');
+    }
+  });
 
   // Fetch authorized repos
   const fetchAuthorizedRepos = useCallback(async () => {
@@ -332,6 +337,7 @@ export function ImportRepoDialog({
         setPublicInput('');
         setBranch('');
         setImportError(null);
+        setConnectError(null);
         setImportingRepo(null);
         setSearchResults(null);
         setSearchError(null);
@@ -400,9 +406,27 @@ export function ImportRepoDialog({
 
         {!isConnected ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-            <p className="text-sm text-muted-foreground">
-              Connect your GitHub account first to import repositories.
-            </p>
+            <p className="text-sm text-muted-foreground">Connect your GitHub account first to import repositories.</p>
+            <Button
+              type="button"
+              variant="default"
+              className="gap-2"
+              disabled={isConnectingGitHub}
+              onClick={() => void handleConnectGitHub()}
+            >
+              {isConnectingGitHub ? (
+                <>
+                  <CircleNotchIcon size={14} className="animate-spin" />
+                  Connecting…
+                </>
+              ) : (
+                <>
+                  <GithubLogoIcon size={14} weight="fill" />
+                  Connect GitHub
+                </>
+              )}
+            </Button>
+            {connectError ? <p className="text-xs text-destructive">{connectError}</p> : null}
           </div>
         ) : (
           <Tabs defaultValue="public" className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -524,9 +548,7 @@ export function ImportRepoDialog({
                     </ScrollArea>
                   ) : null}
 
-                  {importError && (
-                    <p className="mt-2 shrink-0 text-xs text-destructive">{importError}</p>
-                  )}
+                  {importError && <p className="mt-2 shrink-0 text-xs text-destructive">{importError}</p>}
                 </div>
               ) : (
                 /* Empty state / hint */
@@ -534,9 +556,7 @@ export function ImportRepoDialog({
                   <p className="text-sm text-muted-foreground">
                     Search any public repository on GitHub, or paste a URL to import directly.
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Type at least 2 characters to start searching.
-                  </p>
+                  <p className="text-xs text-muted-foreground">Type at least 2 characters to start searching.</p>
                 </div>
               )}
             </TabsContent>
@@ -561,14 +581,15 @@ export function ImportRepoDialog({
                 </a>
               )}
 
-              <p className="mb-2 shrink-0 text-[11px] text-muted-foreground">
-                Your authorized private repositories
-              </p>
+              <p className="mb-2 shrink-0 text-[11px] text-muted-foreground">Your authorized private repositories</p>
 
               {isLoadingAuthorized && !authorizedRepos ? (
                 <div className="space-y-3">
                   {Array.from({ length: 4 }, (_, index) => (
-                    <div key={index} className="flex items-center gap-3 border-b border-border/50 px-1 py-3 last:border-b-0">
+                    <div
+                      key={index}
+                      className="flex items-center gap-3 border-b border-border/50 px-1 py-3 last:border-b-0"
+                    >
                       <Skeleton className="h-8 w-8 rounded-full" />
                       <div className="min-w-0 flex-1 space-y-2">
                         <Skeleton className="h-4 w-40" />
@@ -587,12 +608,8 @@ export function ImportRepoDialog({
                 </div>
               ) : authorizedPrivateRepos && authorizedPrivateRepos.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    No private repos authorized yet.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Use the link above to select repos on GitHub.
-                  </p>
+                  <p className="text-sm text-muted-foreground">No private repos authorized yet.</p>
+                  <p className="text-xs text-muted-foreground">Use the link above to select repos on GitHub.</p>
                 </div>
               ) : authorizedPrivateRepos ? (
                 <ScrollArea className="min-h-0 flex-1">
@@ -611,9 +628,7 @@ export function ImportRepoDialog({
                 </ScrollArea>
               ) : null}
 
-              {importError && (
-                <p className="mt-2 shrink-0 text-xs text-destructive">{importError}</p>
-              )}
+              {importError && <p className="mt-2 shrink-0 text-xs text-destructive">{importError}</p>}
             </TabsContent>
           </Tabs>
         )}

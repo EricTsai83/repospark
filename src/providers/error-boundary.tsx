@@ -51,10 +51,7 @@ export class ErrorBoundary extends Component<{ children: ReactNode }, ErrorBound
                   <code>VITE_WORKOS_CLIENT_ID="your-client-id"</code>
                 </li>
                 <li>
-                  <code>VITE_WORKOS_API_HOSTNAME="api.workos.com"</code>
-                </li>
-                <li>
-                  <code>VITE_WORKOS_REDIRECT_URI="your-redirect-uri"</code>
+                  <code>VITE_CONVEX_URL="your-convex-url"</code>
                 </li>
               </ul>
               <p>

@@ -8,8 +8,7 @@
         "corsOrigins": ["http://localhost:5173"]
       },
       "localEnvVars": {
-        "VITE_WORKOS_CLIENT_ID": "${authEnv.WORKOS_CLIENT_ID}",
-        "VITE_WORKOS_REDIRECT_URI": "http://localhost:5173/callback"
+        "VITE_WORKOS_CLIENT_ID": "${authEnv.WORKOS_CLIENT_ID}"
       }
     },
     "preview": {

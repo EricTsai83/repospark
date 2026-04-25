@@ -13,6 +13,8 @@ The app is built as a single React frontend plus a Convex backend. Convex handle
 
 RepoSpark is an early-access open source project. Core repository import, chat, artifact generation, sync, and sandbox lifecycle flows are implemented. Sandbox reliability and Daytona webhook reconciliation are still active areas of iteration.
 
+The repository is standardized on Bun as its package manager and script runner.
+
 ## Core capabilities
 
 - Import GitHub repositories through a GitHub App instead of personal access tokens
@@ -82,7 +84,7 @@ Before running the app locally, make sure you have:
 ### 1. Install dependencies
 
 ```bash
-npm install
+bun install
 ```
 
 ### 2. Configure frontend environment variables
@@ -97,7 +99,6 @@ Required frontend variables:
 
 - `VITE_CONVEX_URL`
 - `VITE_WORKOS_CLIENT_ID`
-- `VITE_WORKOS_REDIRECT_URI`
 
 `env.ts` validates these values at build time.
 
@@ -114,7 +115,6 @@ Required or commonly used Convex runtime variables:
   - `GITHUB_APP_SLUG`
   - `GITHUB_APP_PRIVATE_KEY`
   - `GITHUB_APP_WEBHOOK_SECRET`
-  - `SITE_URL`
 - OpenAI
   - `OPENAI_API_KEY`
   - `OPENAI_MODEL`
@@ -147,7 +147,7 @@ Rate limit and lease overrides are also supported in Convex runtime env:
 ### 4. Start the app
 
 ```bash
-npm run dev
+bun run dev
 ```
 
 This runs the frontend and backend together:
@@ -166,22 +166,25 @@ When wiring external services, these are the important routes:
 - GitHub App webhook: `https://<your-convex-site>/api/github/webhook`
 - Daytona webhook: `https://<your-convex-site>/api/daytona/webhook`
 
+For GitHub App installation, the frontend sends its current origin when the install flow starts. The Convex callback stores that origin in the OAuth state and redirects back to it after installation. If GitHub calls back without a usable state, the HTTP endpoint now returns an explicit error response instead of guessing a frontend URL.
+
 Configure Daytona/Svix to sign deliveries for that endpoint, then store the endpoint signing secret in `DAYTONA_WEBHOOK_SIGNING_SECRET`. `DAYTONA_WEBHOOK_ORGANIZATION_ID` can be used as an additional allowlist check.
 
 ## Available scripts
 
 | Command | Description |
 | --- | --- |
-| `npm run dev` | Run frontend and Convex backend in parallel |
-| `npm run dev:frontend` | Start the Vite frontend |
-| `npm run dev:backend` | Start `convex dev` |
-| `npm run build` | Type-check and build the frontend |
-| `npm run typecheck` | Run the app TypeScript build |
-| `npm run typecheck:convex` | Type-check Convex code only |
-| `npm run lint` | Run type checks and ESLint |
-| `npm test` | Run Vitest |
-| `npm run preview` | Preview the production build |
-| `npm run format` | Format the repo with Prettier |
+| `bun run dev` | Run frontend and Convex backend in parallel |
+| `bun run dev:frontend` | Start the Vite frontend |
+| `bun run dev:backend` | Start `convex dev` |
+| `bun run build` | Type-check and build the frontend |
+| `bun run build:vercel` | Deploy Convex, inject `VITE_CONVEX_URL`, and build for Vercel |
+| `bun run typecheck` | Run the app TypeScript build |
+| `bun run typecheck:convex` | Type-check Convex code only |
+| `bun run lint` | Run type checks and ESLint |
+| `bun run test` | Run Vitest |
+| `bun run preview` | Preview the production build |
+| `bun run format` | Format the repo with Prettier |
 
 ## Authentication and access model
 
@@ -220,6 +223,8 @@ The current deployment model is intentionally simple:
 - frontend: static Vite build
 - backend: Convex cloud
 - external services: WorkOS, GitHub, Daytona, and OpenAI
+- hosting/CD: Vercel Git integration running `bun run build:vercel`
+- SPA deep links: handled by `vercel.json` rewrites
 
 There is no separate always-on custom API server in front of the backend.
 

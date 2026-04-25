@@ -22,6 +22,98 @@ function constantTimeEqual(a: string, b: string): boolean {
   return result === 0;
 }
 
+function buildRedirectUrl(
+  baseUrl: string,
+  params: Record<string, string>,
+): string {
+  const redirectUrl = new URL(baseUrl);
+  for (const [key, value] of Object.entries(params)) {
+    redirectUrl.searchParams.set(key, value);
+  }
+  return redirectUrl.toString();
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function githubCallbackErrorResponse(
+  status: number,
+  title: string,
+  message: string,
+): Response {
+  const body = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      body {
+        font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #0b1020;
+        color: #e5e7eb;
+      }
+      main {
+        max-width: 36rem;
+        padding: 2rem;
+        border: 1px solid rgba(229, 231, 235, 0.16);
+        border-radius: 1rem;
+        background: rgba(15, 23, 42, 0.92);
+      }
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: 1.25rem;
+      }
+      p {
+        margin: 0;
+        line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(message)}</p>
+    </main>
+  </body>
+</html>`;
+
+  return new Response(body, {
+    status,
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+    },
+  });
+}
+
+function redirectOrReturnError(
+  redirectTarget: string | null,
+  params: Record<string, string>,
+  status: number,
+  message: string,
+): Response {
+  if (redirectTarget) {
+    return Response.redirect(buildRedirectUrl(redirectTarget, params), 302);
+  }
+
+  return githubCallbackErrorResponse(
+    status,
+    'GitHub connection could not be completed.',
+    message,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // GitHub App installation callback
 // ---------------------------------------------------------------------------
@@ -44,24 +136,39 @@ http.route({
     const url = new URL(request.url);
     const installationIdParam = url.searchParams.get('installation_id');
     const state = url.searchParams.get('state');
-
-    const siteUrl = process.env.SITE_URL ?? 'http://localhost:5173';
+    let redirectTarget: string | null = state
+      ? await ctx.runQuery(internal.github.getOAuthReturnToByState, { state })
+      : null;
 
     if (!installationIdParam || !state) {
-      return Response.redirect(`${siteUrl}?github_error=missing_params`, 302);
+      return redirectOrReturnError(
+        redirectTarget,
+        { github_error: 'missing_params' },
+        400,
+        'GitHub did not send the parameters needed to complete the installation flow.',
+      );
     }
 
     const installationId = parseInt(installationIdParam, 10);
     if (isNaN(installationId)) {
-      return Response.redirect(`${siteUrl}?github_error=invalid_installation`, 302);
+      return redirectOrReturnError(
+        redirectTarget,
+        { github_error: 'invalid_installation' },
+        400,
+        'GitHub returned an invalid installation identifier.',
+      );
     }
 
     try {
       // Validate and consume the CSRF state
-      const ownerTokenIdentifier: string = await ctx.runMutation(
+      const oauthState: {
+        ownerTokenIdentifier: string;
+        returnTo: string | null;
+      } = await ctx.runMutation(
         internal.github.consumeOAuthState,
         { state },
       );
+      redirectTarget = oauthState.returnTo;
 
       // Fetch installation details from GitHub API
       const details: {
@@ -79,7 +186,7 @@ http.route({
             existingInstallationId: number;
             existingAccountLogin: string;
           } = await ctx.runMutation(internal.github.saveInstallation, {
-        ownerTokenIdentifier,
+        ownerTokenIdentifier: oauthState.ownerTokenIdentifier,
         installationId,
         accountLogin: details.accountLogin,
         accountType: details.accountType,
@@ -92,20 +199,35 @@ http.route({
           existingInstallationId: saveResult.existingInstallationId,
           existingAccountLogin: saveResult.existingAccountLogin,
         });
-        return Response.redirect(`${siteUrl}?github_error=already_connected`, 302);
+        return redirectOrReturnError(
+          redirectTarget,
+          { github_error: 'already_connected' },
+          409,
+          'This GitHub account is already connected to a different installation in RepoSpark.',
+        );
       }
 
       logInfo('http', 'github_callback_completed', {
         installationId,
       });
-      return Response.redirect(`${siteUrl}?github_connected=true`, 302);
+      return redirectOrReturnError(
+        redirectTarget,
+        { github_connected: 'true' },
+        500,
+        'GitHub finished the installation flow, but RepoSpark could not determine where to return you.',
+      );
     } catch (error) {
       const errorId = logErrorWithId('http', 'github_callback_failed', error, {
         installationId: installationIdParam,
       });
-      return Response.redirect(
-        `${siteUrl}?github_error=callback_failed&error_id=${encodeURIComponent(errorId)}`,
-        302,
+      return redirectOrReturnError(
+        redirectTarget,
+        {
+          github_error: 'callback_failed',
+          error_id: errorId,
+        },
+        500,
+        `GitHub callback processing failed. Reference: ${errorId}`,
       );
     }
   }),

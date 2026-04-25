@@ -9,6 +9,7 @@ import { ErrorBoundary } from '@/providers/error-boundary';
 import { ThemeProvider } from '@/providers/theme-provider';
 
 const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL);
+const workosRedirectUri = new URL('/callback', window.location.origin).toString();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -16,7 +17,7 @@ createRoot(document.getElementById('root')!).render(
       <ThemeProvider defaultTheme="system" storageKey="vite-ui-theme">
         <AuthKitProvider
           clientId={import.meta.env.VITE_WORKOS_CLIENT_ID}
-          redirectUri={import.meta.env.VITE_WORKOS_REDIRECT_URI}
+          redirectUri={workosRedirectUri}
         >
           <ConvexProviderWithAuthKit client={convex} useAuth={useAuth}>
             <App />

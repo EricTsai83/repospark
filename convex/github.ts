@@ -52,16 +52,32 @@ export const createOAuthState = internalMutation({
   args: {
     state: v.string(),
     ownerTokenIdentifier: v.string(),
+    returnTo: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
     await ctx.db.insert('githubOAuthStates', {
       state: args.state,
       ownerTokenIdentifier: args.ownerTokenIdentifier,
+      ...(args.returnTo ? { returnTo: args.returnTo } : {}),
       createdAt: now,
       expiresAt: now + 10 * 60 * 1000, // 10-minute expiry
       consumed: false,
     });
+  },
+});
+
+export const getOAuthReturnToByState = internalQuery({
+  args: {
+    state: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const stateDoc = await ctx.db
+      .query('githubOAuthStates')
+      .withIndex('by_state', (q) => q.eq('state', args.state))
+      .first();
+
+    return stateDoc?.returnTo ?? null;
   },
 });
 
@@ -86,7 +102,10 @@ export const consumeOAuthState = internalMutation({
     }
 
     await ctx.db.patch(stateDoc._id, { consumed: true });
-    return stateDoc.ownerTokenIdentifier;
+    return {
+      ownerTokenIdentifier: stateDoc.ownerTokenIdentifier,
+      returnTo: stateDoc.returnTo ?? null,
+    };
   },
 });
 

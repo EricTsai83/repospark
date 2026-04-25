@@ -190,4 +190,85 @@ describe('GitHub installation selection', () => {
 
     expect(installationId).toBe(402);
   });
+
+  test('consumeOAuthState returns the stored returnTo origin and marks the state consumed', async () => {
+    const ownerTokenIdentifier = 'user|oauth-return-to';
+    const state = 'state-with-return-to';
+    const returnTo = 'https://repospark-git-feature-branch.vercel.app';
+    const t = createTestConvex();
+
+    await t.mutation(internal.github.createOAuthState, {
+      state,
+      ownerTokenIdentifier,
+      returnTo,
+    });
+
+    const result = await t.mutation(internal.github.consumeOAuthState, { state });
+
+    expect(result).toEqual({
+      ownerTokenIdentifier,
+      returnTo,
+    });
+
+    const storedState = await t.run(async (ctx) =>
+      await ctx.db
+        .query('githubOAuthStates')
+        .withIndex('by_state', (q) => q.eq('state', state))
+        .unique(),
+    );
+
+    expect(storedState?.consumed).toBe(true);
+    expect(storedState?.returnTo).toBe(returnTo);
+  });
+
+  test('getOAuthReturnToByState returns the stored origin without consuming the state', async () => {
+    const ownerTokenIdentifier = 'user|oauth-read-return-to';
+    const state = 'state-read-return-to';
+    const returnTo = 'https://repospark-git-preview.vercel.app';
+    const t = createTestConvex();
+
+    await t.mutation(internal.github.createOAuthState, {
+      state,
+      ownerTokenIdentifier,
+      returnTo,
+    });
+
+    const lookedUpReturnTo = await t.query(internal.github.getOAuthReturnToByState, {
+      state,
+    });
+
+    expect(lookedUpReturnTo).toBe(returnTo);
+
+    const storedState = await t.run(async (ctx) =>
+      await ctx.db
+        .query('githubOAuthStates')
+        .withIndex('by_state', (q) => q.eq('state', state))
+        .unique(),
+    );
+
+    expect(storedState?.consumed).toBe(false);
+  });
+
+  test('consumeOAuthState returns null returnTo for older state rows without redirect metadata', async () => {
+    const ownerTokenIdentifier = 'user|oauth-legacy-state';
+    const state = 'legacy-state';
+    const t = createTestConvex();
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert('githubOAuthStates', {
+        state,
+        ownerTokenIdentifier,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 10 * 60 * 1000,
+        consumed: false,
+      });
+    });
+
+    const result = await t.mutation(internal.github.consumeOAuthState, { state });
+
+    expect(result).toEqual({
+      ownerTokenIdentifier,
+      returnTo: null,
+    });
+  });
 });

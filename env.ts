@@ -7,7 +7,6 @@ export function validateBuildEnv() {
     client: {
       VITE_CONVEX_URL: z.string().url(),
       VITE_WORKOS_CLIENT_ID: z.string().min(1),
-      VITE_WORKOS_REDIRECT_URI: z.string().url(),
     },
     runtimeEnv: process.env,
     emptyStringAsUndefined: true,

@@ -384,6 +384,7 @@ export default defineSchema({
   githubOAuthStates: defineTable({
     state: v.string(),
     ownerTokenIdentifier: v.string(),
+    returnTo: v.optional(v.string()),
     createdAt: v.number(),
     expiresAt: v.number(),
     consumed: v.boolean(),
