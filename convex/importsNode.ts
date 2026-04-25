@@ -246,7 +246,7 @@ export const runImportPipeline = internalAction({
             source: 'heuristic' as const,
           },
           {
-            kind: 'architecture' as const,
+            kind: 'architecture_overview' as const,
             title: 'Architecture Overview',
             summary: 'Initial architecture map created from repository layout.',
             contentMarkdown: createArchitectureArtifactMarkdown(manifest, {

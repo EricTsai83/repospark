@@ -10,7 +10,9 @@
 
 import type * as analysis from "../analysis.js";
 import type * as analysisNode from "../analysisNode.js";
+import type * as artifactStore from "../artifactStore.js";
 import type * as chat from "../chat.js";
+import type * as chatModeResolver from "../chatModeResolver.js";
 import type * as crons from "../crons.js";
 import type * as daytona from "../daytona.js";
 import type * as daytonaWebhooks from "../daytonaWebhooks.js";
@@ -34,6 +36,7 @@ import type * as lib_sandboxNames from "../lib/sandboxNames.js";
 import type * as ops from "../ops.js";
 import type * as opsNode from "../opsNode.js";
 import type * as repositories from "../repositories.js";
+import type * as threadContext from "../threadContext.js";
 
 import type {
   ApiFromModules,
@@ -44,7 +47,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   analysis: typeof analysis;
   analysisNode: typeof analysisNode;
+  artifactStore: typeof artifactStore;
   chat: typeof chat;
+  chatModeResolver: typeof chatModeResolver;
   crons: typeof crons;
   daytona: typeof daytona;
   daytonaWebhooks: typeof daytonaWebhooks;
@@ -68,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   ops: typeof ops;
   opsNode: typeof opsNode;
   repositories: typeof repositories;
+  threadContext: typeof threadContext;
 }>;
 
 /**

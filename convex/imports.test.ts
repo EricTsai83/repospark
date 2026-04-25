@@ -48,7 +48,7 @@ type PersistFlowArgs = {
     kind:
       | 'manifest'
       | 'readme_summary'
-      | 'architecture'
+      | 'architecture_overview'
       | 'entrypoints'
       | 'dependency_overview'
       | 'deep_analysis'
@@ -187,7 +187,7 @@ describe('import snapshot cleanup', () => {
         summary: 'Old chunk',
         content: 'old',
       });
-      await ctx.db.insert('analysisArtifacts', {
+      await ctx.db.insert('artifacts', {
         repositoryId,
         jobId: oldJobId,
         ownerTokenIdentifier,
@@ -245,7 +245,7 @@ describe('import snapshot cleanup', () => {
         summary: 'Current chunk',
         content: 'current',
       });
-      await ctx.db.insert('analysisArtifacts', {
+      await ctx.db.insert('artifacts', {
         repositoryId,
         jobId: currentJobId,
         ownerTokenIdentifier,
@@ -275,7 +275,7 @@ describe('import snapshot cleanup', () => {
         .withIndex('by_importId_and_path_and_chunkIndex', (q) => q.eq('importId', ids.oldImportId))
         .take(10),
       artifacts: await ctx.db
-        .query('analysisArtifacts')
+        .query('artifacts')
         .withIndex('by_jobId', (q) => q.eq('jobId', ids.oldJobId))
         .take(10),
       currentFiles: await ctx.db
@@ -287,7 +287,7 @@ describe('import snapshot cleanup', () => {
         .withIndex('by_importId_and_path_and_chunkIndex', (q) => q.eq('importId', ids.currentImportId))
         .take(10),
       currentArtifacts: await ctx.db
-        .query('analysisArtifacts')
+        .query('artifacts')
         .withIndex('by_jobId', (q) => q.eq('jobId', ids.currentJobId))
         .take(10),
     }));
@@ -460,7 +460,7 @@ describe('batched import persistence', () => {
           source: 'heuristic',
         },
         {
-          kind: 'architecture',
+          kind: 'architecture_overview',
           title: 'Architecture Overview',
           summary: 'Architecture summary',
           contentMarkdown: '# Architecture',
@@ -485,7 +485,7 @@ describe('batched import persistence', () => {
         .withIndex('by_importId_and_path_and_chunkIndex', (q) => q.eq('importId', ids.importId))
         .take(10),
       artifacts: await ctx.db
-        .query('analysisArtifacts')
+        .query('artifacts')
         .withIndex('by_jobId', (q) => q.eq('jobId', ids.jobId))
         .take(10),
     }));
@@ -657,7 +657,7 @@ describe('batched import persistence', () => {
         .withIndex('by_importId_and_path_and_chunkIndex', (q) => q.eq('importId', ids.importId))
         .take(10),
       artifacts: await ctx.db
-        .query('analysisArtifacts')
+        .query('artifacts')
         .withIndex('by_jobId', (q) => q.eq('jobId', ids.jobId))
         .take(10),
     }));
@@ -740,7 +740,7 @@ describe('repository deletion during import', () => {
         summary: 'Current chunk',
         content: 'current',
       });
-      await ctx.db.insert('analysisArtifacts', {
+      await ctx.db.insert('artifacts', {
         repositoryId,
         jobId: completedJobId,
         ownerTokenIdentifier,
@@ -882,7 +882,7 @@ describe('repository deletion during import', () => {
         .withIndex('by_importId_and_path_and_chunkIndex', (q) => q.eq('importId', ids.failedImportId))
         .take(10),
       failedArtifacts: await ctx.db
-        .query('analysisArtifacts')
+        .query('artifacts')
         .withIndex('by_jobId', (q) => q.eq('jobId', ids.failedJobId))
         .take(10),
       completedFiles: await ctx.db
@@ -890,7 +890,7 @@ describe('repository deletion during import', () => {
         .withIndex('by_importId', (q) => q.eq('importId', ids.completedImportId))
         .take(10),
       completedArtifacts: await ctx.db
-        .query('analysisArtifacts')
+        .query('artifacts')
         .withIndex('by_jobId', (q) => q.eq('jobId', ids.completedJobId))
         .take(10),
     }));

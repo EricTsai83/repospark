@@ -1,0 +1,227 @@
+import { v } from 'convex/values';
+import type { Doc, Id } from './_generated/dataModel';
+import { internalMutation, internalQuery } from './_generated/server';
+import type { MutationCtx, QueryCtx } from './_generated/server';
+
+type ArtifactKind = Doc<'artifacts'>['kind'];
+type ArtifactSource = Doc<'artifacts'>['source'];
+
+interface CreateArtifactArgs {
+  threadId?: Id<'threads'>;
+  repositoryId?: Id<'repositories'>;
+  ownerTokenIdentifier: string;
+  jobId?: Id<'jobs'>;
+  kind: ArtifactKind;
+  title: string;
+  summary: string;
+  contentMarkdown: string;
+  source: ArtifactSource;
+}
+
+/**
+ * Enforces the polymorphic-parent invariant from the PRD: every artifact must
+ * belong to at least one of `thread` or `repository`. The schema makes both
+ * fields `v.optional`, so this is the only place the rule is enforced.
+ */
+function validateParentPresence(
+  threadId: Id<'threads'> | undefined,
+  repositoryId: Id<'repositories'> | undefined,
+) {
+  if (!threadId && !repositoryId) {
+    throw new Error('Artifact must have at least one parent: threadId or repositoryId');
+  }
+}
+
+async function createArtifactInternal(
+  ctx: MutationCtx,
+  args: CreateArtifactArgs,
+): Promise<Id<'artifacts'>> {
+  validateParentPresence(args.threadId, args.repositoryId);
+
+  return await ctx.db.insert('artifacts', {
+    threadId: args.threadId,
+    repositoryId: args.repositoryId,
+    jobId: args.jobId,
+    ownerTokenIdentifier: args.ownerTokenIdentifier,
+    kind: args.kind,
+    title: args.title,
+    summary: args.summary,
+    contentMarkdown: args.contentMarkdown,
+    source: args.source,
+    version: 1,
+  });
+}
+
+async function getArtifactInternal(
+  ctx: QueryCtx,
+  artifactId: Id<'artifacts'>,
+): Promise<Doc<'artifacts'> | null> {
+  return await ctx.db.get(artifactId);
+}
+
+async function updateArtifactInternal(
+  ctx: MutationCtx,
+  artifactId: Id<'artifacts'>,
+  updates: { title?: string; summary?: string; contentMarkdown?: string },
+): Promise<void> {
+  const artifact = await ctx.db.get(artifactId);
+  if (!artifact) {
+    throw new Error('Artifact not found');
+  }
+
+  // Convex `patch` treats explicit `undefined` as "set field to undefined",
+  // which fails validation for required string fields. Build the patch with
+  // only the keys the caller actually provided.
+  const patch: {
+    title?: string;
+    summary?: string;
+    contentMarkdown?: string;
+    version: number;
+  } = { version: artifact.version + 1 };
+  if (updates.title !== undefined) patch.title = updates.title;
+  if (updates.summary !== undefined) patch.summary = updates.summary;
+  if (updates.contentMarkdown !== undefined) patch.contentMarkdown = updates.contentMarkdown;
+
+  await ctx.db.patch(artifactId, patch);
+}
+
+async function deleteArtifactInternal(
+  ctx: MutationCtx,
+  artifactId: Id<'artifacts'>,
+): Promise<void> {
+  await ctx.db.delete(artifactId);
+}
+
+async function listByThreadInternal(
+  ctx: QueryCtx,
+  threadId: Id<'threads'>,
+): Promise<Doc<'artifacts'>[]> {
+  return await ctx.db
+    .query('artifacts')
+    .withIndex('by_threadId', (q) => q.eq('threadId', threadId))
+    .order('desc')
+    .take(100);
+}
+
+async function listByThreadAndKindInternal(
+  ctx: QueryCtx,
+  threadId: Id<'threads'>,
+  kind: ArtifactKind,
+): Promise<Doc<'artifacts'>[]> {
+  return await ctx.db
+    .query('artifacts')
+    .withIndex('by_threadId_and_kind', (q) =>
+      q.eq('threadId', threadId).eq('kind', kind),
+    )
+    .order('desc')
+    .take(100);
+}
+
+async function listByRepositoryInternal(
+  ctx: QueryCtx,
+  repositoryId: Id<'repositories'>,
+): Promise<Doc<'artifacts'>[]> {
+  return await ctx.db
+    .query('artifacts')
+    .withIndex('by_repositoryId', (q) => q.eq('repositoryId', repositoryId))
+    .order('desc')
+    .take(100);
+}
+
+async function listByRepositoryAndKindInternal(
+  ctx: QueryCtx,
+  repositoryId: Id<'repositories'>,
+  kind: ArtifactKind,
+): Promise<Doc<'artifacts'>[]> {
+  return await ctx.db
+    .query('artifacts')
+    .withIndex('by_repositoryId_and_kind', (q) =>
+      q.eq('repositoryId', repositoryId).eq('kind', kind),
+    )
+    .order('desc')
+    .take(100);
+}
+
+const artifactKindValidator = v.union(
+  v.literal('manifest'),
+  v.literal('readme_summary'),
+  v.literal('architecture_overview'),
+  v.literal('architecture_diagram'),
+  v.literal('entrypoints'),
+  v.literal('dependency_overview'),
+  v.literal('deep_analysis'),
+  v.literal('risk_report'),
+  v.literal('adr'),
+  v.literal('failure_mode_analysis'),
+  v.literal('trade_off_matrix'),
+  v.literal('migration_plan'),
+  v.literal('capacity_estimate'),
+  v.literal('design_review'),
+);
+
+const artifactSourceValidator = v.union(
+  v.literal('heuristic'),
+  v.literal('llm'),
+  v.literal('sandbox'),
+);
+
+export const createArtifact = internalMutation({
+  args: {
+    threadId: v.optional(v.id('threads')),
+    repositoryId: v.optional(v.id('repositories')),
+    ownerTokenIdentifier: v.string(),
+    jobId: v.optional(v.id('jobs')),
+    kind: artifactKindValidator,
+    title: v.string(),
+    summary: v.string(),
+    contentMarkdown: v.string(),
+    source: artifactSourceValidator,
+  },
+  handler: (ctx, args) => createArtifactInternal(ctx, args),
+});
+
+export const getArtifact = internalQuery({
+  args: { artifactId: v.id('artifacts') },
+  handler: (ctx, args) => getArtifactInternal(ctx, args.artifactId),
+});
+
+export const updateArtifact = internalMutation({
+  args: {
+    artifactId: v.id('artifacts'),
+    title: v.optional(v.string()),
+    summary: v.optional(v.string()),
+    contentMarkdown: v.optional(v.string()),
+  },
+  handler: (ctx, args) =>
+    updateArtifactInternal(ctx, args.artifactId, {
+      title: args.title,
+      summary: args.summary,
+      contentMarkdown: args.contentMarkdown,
+    }),
+});
+
+export const deleteArtifact = internalMutation({
+  args: { artifactId: v.id('artifacts') },
+  handler: (ctx, args) => deleteArtifactInternal(ctx, args.artifactId),
+});
+
+export const listByThread = internalQuery({
+  args: { threadId: v.id('threads') },
+  handler: (ctx, args) => listByThreadInternal(ctx, args.threadId),
+});
+
+export const listByThreadAndKind = internalQuery({
+  args: { threadId: v.id('threads'), kind: artifactKindValidator },
+  handler: (ctx, args) => listByThreadAndKindInternal(ctx, args.threadId, args.kind),
+});
+
+export const listByRepository = internalQuery({
+  args: { repositoryId: v.id('repositories') },
+  handler: (ctx, args) => listByRepositoryInternal(ctx, args.repositoryId),
+});
+
+export const listByRepositoryAndKind = internalQuery({
+  args: { repositoryId: v.id('repositories'), kind: artifactKindValidator },
+  handler: (ctx, args) =>
+    listByRepositoryAndKindInternal(ctx, args.repositoryId, args.kind),
+});

@@ -140,12 +140,12 @@ export const getRepositoryDetail = query({
 
     const currentImportArtifacts = repository.latestImportJobId
       ? await ctx.db
-          .query('analysisArtifacts')
+          .query('artifacts')
           .withIndex('by_jobId', (q) => q.eq('jobId', repository.latestImportJobId!))
           .take(10)
       : [];
     const recentDeepAnalysisArtifacts = await ctx.db
-      .query('analysisArtifacts')
+      .query('artifacts')
       .withIndex('by_repositoryId_and_kind', (q) =>
         q.eq('repositoryId', args.repositoryId).eq('kind', 'deep_analysis'),
       )
@@ -477,7 +477,7 @@ export const cascadeDeleteRepository = internalMutation({
     if (threads.length === CASCADE_BATCH_SIZE) more = true;
 
     // Drain remaining tables, but keep cleanup jobs until sandbox deletion has finished.
-    more = await drainTable(ctx.db, 'analysisArtifacts', 'by_repositoryId', 'repositoryId', args.repositoryId, CASCADE_BATCH_SIZE) || more;
+    more = await drainTable(ctx.db, 'artifacts', 'by_repositoryId', 'repositoryId', args.repositoryId, CASCADE_BATCH_SIZE) || more;
     more = await drainTable(ctx.db, 'repoChunks', 'by_repositoryId_and_path', 'repositoryId', args.repositoryId, CASCADE_BATCH_SIZE) || more;
     more = await drainTable(ctx.db, 'repoFiles', 'by_repositoryId_and_path', 'repositoryId', args.repositoryId, CASCADE_BATCH_SIZE) || more;
     more = await drainTable(ctx.db, 'imports', 'by_repositoryId', 'repositoryId', args.repositoryId, CASCADE_BATCH_SIZE) || more;
@@ -541,7 +541,7 @@ export const getRepositoryForProcessing = internalQuery({
 
     const artifacts = repository.latestImportJobId
       ? await ctx.db
-          .query('analysisArtifacts')
+          .query('artifacts')
           .withIndex('by_jobId', (q) => q.eq('jobId', repository.latestImportJobId!))
           .take(20)
       : [];

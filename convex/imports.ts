@@ -39,7 +39,7 @@ const artifactRecordValidator = v.object({
   kind: v.union(
     v.literal('manifest'),
     v.literal('readme_summary'),
-    v.literal('architecture'),
+    v.literal('architecture_overview'),
     v.literal('entrypoints'),
     v.literal('dependency_overview'),
     v.literal('deep_analysis'),
@@ -454,7 +454,7 @@ export const persistImportHeader = internalMutation({
 
     for (const artifact of args.artifacts) {
       const existingArtifact = await ctx.db
-        .query('analysisArtifacts')
+        .query('artifacts')
         .withIndex('by_jobId_and_kind', (q) => q.eq('jobId', args.jobId).eq('kind', artifact.kind))
         .unique();
 
@@ -469,7 +469,7 @@ export const persistImportHeader = internalMutation({
         continue;
       }
 
-      await ctx.db.insert('analysisArtifacts', {
+      await ctx.db.insert('artifacts', {
         repositoryId: state.repository._id,
         jobId: args.jobId,
         ownerTokenIdentifier: state.repository.ownerTokenIdentifier,
@@ -675,7 +675,7 @@ export const cleanupSupersededImportSnapshot = internalMutation({
       .take(CASCADE_BATCH_SIZE);
     const importArtifacts = args.importJobId
       ? await ctx.db
-          .query('analysisArtifacts')
+          .query('artifacts')
           .withIndex('by_jobId', (q) => q.eq('jobId', args.importJobId))
           .take(CASCADE_BATCH_SIZE)
       : [];

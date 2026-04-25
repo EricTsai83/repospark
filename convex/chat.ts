@@ -34,7 +34,7 @@ type ReplyContext = {
   repositorySummary?: string;
   readmeSummary?: string;
   architectureSummary?: string;
-  sourceRepoFullName: string;
+  sourceRepoFullName?: string;
   artifacts: Array<{ title: string; summary: string; contentMarkdown: string }>;
   chunks: Array<{ path: string; summary: string; content: string }>;
   messages: Array<{ role: 'user' | 'assistant' | 'system' | 'tool'; content: string }>;
@@ -183,18 +183,30 @@ async function deleteMessageStreamState(ctx: MutationCtx, streamId: Id<'messageS
 
 export const listThreads = query({
   args: {
-    repositoryId: v.id('repositories'),
+    repositoryId: v.optional(v.id('repositories')),
   },
   handler: async (ctx, args) => {
     const identity = await requireViewerIdentity(ctx);
-    const repository = await ctx.db.get(args.repositoryId);
-    if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
-      throw new Error('Repository not found.');
+
+    const filterRepositoryId = args.repositoryId;
+    if (filterRepositoryId) {
+      const repository = await ctx.db.get(filterRepositoryId);
+      if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+        throw new Error('Repository not found.');
+      }
+
+      return await ctx.db
+        .query('threads')
+        .withIndex('by_repositoryId_and_lastMessageAt', (q) => q.eq('repositoryId', filterRepositoryId))
+        .order('desc')
+        .take(20);
     }
 
     return await ctx.db
       .query('threads')
-      .withIndex('by_repositoryId_and_lastMessageAt', (q) => q.eq('repositoryId', args.repositoryId))
+      .withIndex('by_ownerTokenIdentifier_and_lastMessageAt', (q) =>
+        q.eq('ownerTokenIdentifier', identity.tokenIdentifier),
+      )
       .order('desc')
       .take(20);
   },
@@ -211,9 +223,15 @@ export const listMessages = query({
       throw new Error('Thread not found.');
     }
 
-    const repository = await ctx.db.get(thread.repositoryId);
-    if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+    if (thread.ownerTokenIdentifier !== identity.tokenIdentifier) {
       throw new Error('Thread not found.');
+    }
+
+    if (thread.repositoryId) {
+      const repository = await ctx.db.get(thread.repositoryId);
+      if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+        throw new Error('Thread not found.');
+      }
     }
 
     return await loadRecentMessages(ctx, args.threadId, MAX_VISIBLE_MESSAGES);
@@ -231,9 +249,15 @@ export const getActiveMessageStream = query({
       throw new Error('Thread not found.');
     }
 
-    const repository = await ctx.db.get(thread.repositoryId);
-    if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+    if (thread.ownerTokenIdentifier !== identity.tokenIdentifier) {
       throw new Error('Thread not found.');
+    }
+
+    if (thread.repositoryId) {
+      const repository = await ctx.db.get(thread.repositoryId);
+      if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+        throw new Error('Thread not found.');
+      }
     }
 
     const stream = await getMessageStreamByThread(ctx, args.threadId);
@@ -259,21 +283,28 @@ export const getActiveMessageStream = query({
 
 export const createThread = mutation({
   args: {
-    repositoryId: v.id('repositories'),
+    repositoryId: v.optional(v.id('repositories')),
     title: v.optional(v.string()),
     mode: v.optional(v.union(v.literal('fast'), v.literal('deep'))),
   },
   handler: async (ctx, args) => {
     const identity = await requireViewerIdentity(ctx);
-    const repository = await ctx.db.get(args.repositoryId);
-    if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
-      throw new Error('Repository not found.');
+
+    let title = args.title;
+    if (args.repositoryId) {
+      const repository = await ctx.db.get(args.repositoryId);
+      if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+        throw new Error('Repository not found.');
+      }
+      title ??= `${repository.sourceRepoName} chat`;
+    } else {
+      title ??= 'New design conversation';
     }
 
     return await ctx.db.insert('threads', {
       repositoryId: args.repositoryId,
       ownerTokenIdentifier: identity.tokenIdentifier,
-      title: args.title ?? `${repository.sourceRepoName} chat`,
+      title,
       mode: args.mode ?? 'fast',
       lastMessageAt: Date.now(),
     });
@@ -309,9 +340,11 @@ export const deleteThread = mutation({
     }
 
     // Clear defaultThreadId reference on the repository if needed
-    const repository = await ctx.db.get(thread.repositoryId);
-    if (repository && repository.defaultThreadId === args.threadId) {
-      await ctx.db.patch(thread.repositoryId, { defaultThreadId: undefined });
+    if (thread.repositoryId) {
+      const repository = await ctx.db.get(thread.repositoryId);
+      if (repository && repository.defaultThreadId === args.threadId) {
+        await ctx.db.patch(thread.repositoryId, { defaultThreadId: undefined });
+      }
     }
 
     // Delete the thread itself
@@ -384,12 +417,23 @@ export const sendMessage = mutation({
       throw new Error('Thread not found.');
     }
 
-    const repository = await ctx.db.get(thread.repositoryId);
-    if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+    if (thread.ownerTokenIdentifier !== identity.tokenIdentifier) {
       throw new Error('Thread not found.');
     }
 
+    let repository: Doc<'repositories'> | null = null;
+    if (thread.repositoryId) {
+      repository = await ctx.db.get(thread.repositoryId);
+      if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+        throw new Error('Thread not found.');
+      }
+    }
+
     const mode = args.mode ?? thread.mode;
+    if (mode === 'deep' && !repository) {
+      throw new Error('Deep mode requires an attached repository.');
+    }
+
     const now = Date.now();
     const trimmedContent = args.content.trim();
     const activeJob = await getActiveChatJobForThread(ctx, args.threadId, now);
@@ -408,7 +452,7 @@ export const sendMessage = mutation({
     const jobId = await ctx.db.insert('jobs', {
       repositoryId: thread.repositoryId,
       ownerTokenIdentifier: identity.tokenIdentifier,
-      sandboxId: repository.latestSandboxId,
+      sandboxId: repository?.latestSandboxId,
       threadId: args.threadId,
       kind: 'chat',
       status: 'queued',
@@ -484,6 +528,27 @@ export const getReplyContext = internalQuery({
       throw new Error('Thread not found.');
     }
 
+    const messages = (await loadRecentMessages(ctx, args.threadId, MAX_CONTEXT_MESSAGES + 1))
+      .filter((message) => message.content.trim().length > 0)
+      .slice(-MAX_CONTEXT_MESSAGES);
+    const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user');
+
+    if (!thread.repositoryId) {
+      return {
+        ownerTokenIdentifier: thread.ownerTokenIdentifier,
+        repositorySummary: undefined,
+        readmeSummary: undefined,
+        architectureSummary: undefined,
+        sourceRepoFullName: undefined,
+        artifacts: [],
+        chunks: [],
+        messages: messages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+      };
+    }
+
     const repository = await ctx.db.get(thread.repositoryId);
     if (!repository) {
       throw new Error('Repository not found.');
@@ -491,22 +556,18 @@ export const getReplyContext = internalQuery({
 
     const importArtifacts = repository.latestImportJobId
       ? await ctx.db
-          .query('analysisArtifacts')
+          .query('artifacts')
           .withIndex('by_jobId', (q) => q.eq('jobId', repository.latestImportJobId!))
           .take(10)
       : [];
     const deepAnalysisArtifacts = await ctx.db
-      .query('analysisArtifacts')
+      .query('artifacts')
       .withIndex('by_repositoryId_and_kind', (q) =>
-        q.eq('repositoryId', thread.repositoryId).eq('kind', 'deep_analysis'),
+        q.eq('repositoryId', repository._id).eq('kind', 'deep_analysis'),
       )
       .order('desc')
       .take(10);
     const artifacts = [...importArtifacts, ...deepAnalysisArtifacts];
-    const messages = (await loadRecentMessages(ctx, args.threadId, MAX_CONTEXT_MESSAGES + 1))
-      .filter((message) => message.content.trim().length > 0)
-      .slice(-MAX_CONTEXT_MESSAGES);
-    const latestUserMessage = [...messages].reverse().find((message) => message.role === 'user');
     const chunks = repository.latestImportId
       ? await loadCandidateChunks(ctx, repository.latestImportId, latestUserMessage?.content ?? '')
       : [];
@@ -903,21 +964,27 @@ function buildUserPrompt(
     .map((chunk) => `### ${chunk.path}\n${chunk.summary}\n${chunk.content.slice(0, 1200)}`)
     .join('\n\n');
 
+  const hasRepoContext =
+    !!context.sourceRepoFullName ||
+    !!context.repositorySummary ||
+    context.artifacts.length > 0 ||
+    relevantChunks.length > 0;
+
   return [
-    `Repository: ${context.sourceRepoFullName}`,
+    context.sourceRepoFullName ? `Repository: ${context.sourceRepoFullName}` : undefined,
     context.repositorySummary ? `Repository summary: ${context.repositorySummary}` : undefined,
     context.readmeSummary ? `README summary: ${context.readmeSummary}` : undefined,
     context.architectureSummary ? `Architecture summary: ${context.architectureSummary}` : undefined,
-    '',
-    'Artifacts:',
-    artifactSection,
-    '',
-    'Relevant code excerpts:',
-    chunkSection || 'No highly relevant chunks were pre-selected.',
-    '',
+    hasRepoContext ? '' : undefined,
+    hasRepoContext ? 'Artifacts:' : undefined,
+    hasRepoContext ? artifactSection || 'No artifacts were pre-selected.' : undefined,
+    hasRepoContext ? '' : undefined,
+    hasRepoContext ? 'Relevant code excerpts:' : undefined,
+    hasRepoContext ? chunkSection || 'No highly relevant chunks were pre-selected.' : undefined,
+    hasRepoContext ? '' : 'No repository is attached to this thread; answer from general architecture knowledge.',
     `User question: ${question}`,
   ]
-    .filter(Boolean)
+    .filter((line): line is string => line !== undefined)
     .join('\n');
 }
 
@@ -926,6 +993,16 @@ function buildHeuristicAnswer(
   question: string,
   relevantChunks: Array<{ path: string; summary: string; content: string }>,
 ) {
+  if (!context.sourceRepoFullName) {
+    return [
+      `目前沒有設定 \`OPENAI_API_KEY\`，且這個對話尚未綁定 repository，所以無法做 grounded 回覆。`,
+      '',
+      `你的問題：${question}`,
+      '',
+      '建議：在側邊欄附加一個 repository 之後再提問，就能取得 grounded / deep 模式的回覆。',
+    ].join('\n');
+  }
+
   return [
     `目前沒有設定 \`OPENAI_API_KEY\`，所以我先用已索引的 repository artifact 回答。`,
     '',

@@ -70,11 +70,18 @@ const sandboxRemoteDiscoveryStatus = v.union(
 const artifactKind = v.union(
   v.literal('manifest'),
   v.literal('readme_summary'),
-  v.literal('architecture'),
+  v.literal('architecture_overview'),
+  v.literal('architecture_diagram'),
   v.literal('entrypoints'),
   v.literal('dependency_overview'),
   v.literal('deep_analysis'),
   v.literal('risk_report'),
+  v.literal('adr'),
+  v.literal('failure_mode_analysis'),
+  v.literal('trade_off_matrix'),
+  v.literal('migration_plan'),
+  v.literal('capacity_estimate'),
+  v.literal('design_review'),
 );
 
 const threadMode = v.union(v.literal('fast'), v.literal('deep'));
@@ -174,7 +181,7 @@ export default defineSchema({
     .index('by_status_and_ttlExpiresAt', ['status', 'ttlExpiresAt']),
 
   jobs: defineTable({
-    repositoryId: v.id('repositories'),
+    repositoryId: v.optional(v.id('repositories')),
     ownerTokenIdentifier: v.string(),
     sandboxId: v.optional(v.id('sandboxes')),
     threadId: v.optional(v.id('threads')),
@@ -241,8 +248,9 @@ export default defineSchema({
     .index('by_remoteId', ['remoteId'])
     .index('by_discoveryStatus_and_confirmAfterAt', ['discoveryStatus', 'confirmAfterAt']),
 
-  analysisArtifacts: defineTable({
-    repositoryId: v.id('repositories'),
+  artifacts: defineTable({
+    repositoryId: v.optional(v.id('repositories')),
+    threadId: v.optional(v.id('threads')),
     jobId: v.optional(v.id('jobs')),
     ownerTokenIdentifier: v.string(),
     kind: artifactKind,
@@ -254,6 +262,8 @@ export default defineSchema({
   })
     .index('by_repositoryId', ['repositoryId'])
     .index('by_repositoryId_and_kind', ['repositoryId', 'kind'])
+    .index('by_threadId', ['threadId'])
+    .index('by_threadId_and_kind', ['threadId', 'kind'])
     .index('by_jobId', ['jobId'])
     .index('by_jobId_and_kind', ['jobId', 'kind']),
 
@@ -308,7 +318,7 @@ export default defineSchema({
     }),
 
   threads: defineTable({
-    repositoryId: v.id('repositories'),
+    repositoryId: v.optional(v.id('repositories')),
     ownerTokenIdentifier: v.string(),
     title: v.string(),
     mode: threadMode,
@@ -319,7 +329,7 @@ export default defineSchema({
     .index('by_ownerTokenIdentifier_and_lastMessageAt', ['ownerTokenIdentifier', 'lastMessageAt']),
 
   messages: defineTable({
-    repositoryId: v.id('repositories'),
+    repositoryId: v.optional(v.id('repositories')),
     threadId: v.id('threads'),
     jobId: v.optional(v.id('jobs')),
     ownerTokenIdentifier: v.string(),
@@ -341,7 +351,7 @@ export default defineSchema({
    * rows are the canonical persisted tail for that singleton stream.
    */
   messageStreams: defineTable({
-    repositoryId: v.id('repositories'),
+    repositoryId: v.optional(v.id('repositories')),
     threadId: v.id('threads'),
     jobId: v.id('jobs'),
     assistantMessageId: v.id('messages'),

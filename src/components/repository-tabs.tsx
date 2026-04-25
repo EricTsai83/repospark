@@ -30,7 +30,7 @@ export function RepositoryTabs({
   activeTab: 'chat' | 'jobs' | 'artifacts';
   onActiveTabChange: (value: 'chat' | 'jobs' | 'artifacts') => void;
   jobs: Doc<'jobs'>[] | undefined;
-  artifacts: Doc<'analysisArtifacts'>[] | undefined;
+  artifacts: Doc<'artifacts'>[] | undefined;
   selectedThreadId: ThreadId | null;
   messages: Doc<'messages'>[] | undefined;
   activeMessageStream: ActiveMessageStream | null | undefined;

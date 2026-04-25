@@ -62,7 +62,7 @@ export const listArtifacts = query({
     }
 
     return await ctx.db
-      .query('analysisArtifacts')
+      .query('artifacts')
       .withIndex('by_repositoryId', (q) => q.eq('repositoryId', args.repositoryId))
       .order('desc')
       .take(40);
@@ -177,7 +177,7 @@ export const completeDeepAnalysis = internalMutation({
     contentMarkdown: v.string(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.insert('analysisArtifacts', {
+    await ctx.db.insert('artifacts', {
       repositoryId: args.repositoryId,
       jobId: args.jobId,
       ownerTokenIdentifier: args.ownerTokenIdentifier,

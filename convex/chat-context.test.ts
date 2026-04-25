@@ -85,7 +85,7 @@ describe('chat reply context', () => {
         summary: 'Old chunk',
         content: 'const legacyValue = "old";',
       });
-      await ctx.db.insert('analysisArtifacts', {
+      await ctx.db.insert('artifacts', {
         repositoryId,
         jobId: oldJobId,
         ownerTokenIdentifier,
@@ -143,7 +143,7 @@ describe('chat reply context', () => {
         summary: 'New chunk',
         content: 'const currentValue = "new";',
       });
-      await ctx.db.insert('analysisArtifacts', {
+      await ctx.db.insert('artifacts', {
         repositoryId,
         jobId: latestJobId,
         ownerTokenIdentifier,
@@ -165,7 +165,7 @@ describe('chat reply context', () => {
         costCategory: 'deep_analysis',
         triggerSource: 'user',
       });
-      await ctx.db.insert('analysisArtifacts', {
+      await ctx.db.insert('artifacts', {
         repositoryId,
         jobId: deepAnalysisJobId,
         ownerTokenIdentifier,
