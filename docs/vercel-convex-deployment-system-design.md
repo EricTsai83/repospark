@@ -174,10 +174,11 @@ This avoids having preview correctness depend on a manually managed global front
 The deployment setup should keep these rules:
 
 - expose Vercel system environment variables to the build
-- use `rewrites` for SPA deep-link fallback
+- use `rewrites` for SPA deep-link fallback without catching `/api/*` or file-extension asset requests
 - keep secrets out of frontend env
 - keep GitHub Actions as CI-only unless there is a real release-orchestration need
 - if no valid state exists, return an explicit callback error instead of guessing a frontend URL
+- if installation succeeds but no return target exists, return a success page instead of a misleading 500 error
 
 ## Result
 

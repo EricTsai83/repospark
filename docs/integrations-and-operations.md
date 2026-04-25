@@ -87,6 +87,7 @@ The actual flow is:
 7. conflict redirects use `?github_error=already_connected` instead of silently replacing the existing connection.
 8. callback redirects use the stored frontend origin when available.
 9. if GitHub calls back without a usable state, the HTTP route returns an explicit error response instead of guessing a frontend URL.
+10. if installation succeeds but no return target is available, the callback returns a small success page instead of a misleading 500 error.
 
 ### Webhook flow
 
@@ -409,7 +410,7 @@ The minimum deployment structure implied by the current codebase is:
 - backend: Convex cloud
 - external dependencies: WorkOS, GitHub, Daytona, and OpenAI
 - hosting/CD: Vercel Git integration calling `bun run build:vercel`
-- SPA routing fallback: `vercel.json` rewrites all unknown routes to `index.html`
+- SPA routing fallback: `vercel.json` rewrites client routes to `index.html` while leaving `/api/*` and file-extension asset requests alone
 
 In other words, Repospark does not require another always-on API server. Convex already fills the roles of application backend, scheduler, HTTP endpoint host, and database.
 

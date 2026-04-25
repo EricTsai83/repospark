@@ -112,8 +112,9 @@ Repospark does not ask users to provide a GitHub personal access token. Instead,
 5. The callback validates and consumes the state.
 6. The backend fetches installation details from the GitHub API.
 7. The installation is written into `githubInstallations`.
-8. The callback redirects back to the stored frontend origin.
+8. If a stored frontend origin exists, the callback redirects back to it.
 9. If GitHub calls back without a usable state, the HTTP endpoint returns an explicit error response instead of guessing a frontend URL.
+10. If installation succeeds but no return target is available, the endpoint returns a small success page instead of a misleading server error.
 
 ### Why `githubOAuthStates` exists
 
