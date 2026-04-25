@@ -84,8 +84,11 @@ export const requestDeepAnalysis = mutation({
 
     const sandbox = repository.latestSandboxId ? await ctx.db.get(repository.latestSandboxId) : null;
     const sandboxAvailability = getSandboxAvailability(sandbox);
-    if (!sandbox || !sandboxAvailability.available) {
+    if (!sandboxAvailability.available) {
       throw new Error(sandboxAvailability.message ?? 'Deep analysis is unavailable.');
+    }
+    if (!sandbox) {
+      throw new Error('Deep analysis is unavailable.');
     }
 
     const now = Date.now();

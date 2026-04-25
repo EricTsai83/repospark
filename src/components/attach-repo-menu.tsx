@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation } from 'convex/react';
 import {
   CaretDownIcon,
@@ -51,22 +51,40 @@ export function AttachRepoMenu({
   availableRepositories: ReadonlyArray<Doc<'repositories'>>;
 }) {
   const setThreadRepository = useMutation(api.chat.setThreadRepository);
-  const [isPending, setIsPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setError(null);
-  }, [threadId]);
+  const latestRequestRef = useRef(0);
+  const [pendingRequest, setPendingRequest] = useState<{
+    threadId: ThreadId;
+    requestId: number;
+  } | null>(null);
+  const [errorState, setErrorState] = useState<{
+    threadId: ThreadId;
+    message: string;
+  } | null>(null);
+  const isPending = pendingRequest?.threadId === threadId;
+  const error = errorState?.threadId === threadId ? errorState.message : null;
 
   const handleSelect = async (repoId: RepositoryId | null) => {
-    setError(null);
-    setIsPending(true);
+    const requestId = latestRequestRef.current + 1;
+    latestRequestRef.current = requestId;
+    setErrorState(null);
+    setPendingRequest({ threadId, requestId });
     try {
       await setThreadRepository({ threadId, repositoryId: repoId });
     } catch (err) {
-      setError(toUserErrorMessage(err, 'Failed to update repository.'));
+      if (latestRequestRef.current !== requestId) {
+        return;
+      }
+      setErrorState({
+        threadId,
+        message: toUserErrorMessage(err, 'Failed to update repository.'),
+      });
     } finally {
-      setIsPending(false);
+      if (latestRequestRef.current !== requestId) {
+        return;
+      }
+      setPendingRequest((current) =>
+        current?.requestId === requestId ? null : current,
+      );
     }
   };
 
@@ -164,7 +182,11 @@ export function AttachRepoMenu({
           <button
             type="button"
             className="inline-flex h-4 w-4 items-center justify-center rounded-sm text-destructive/80 transition-colors hover:text-destructive focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            onClick={() => setError(null)}
+            onClick={() =>
+              setErrorState((current) =>
+                current?.threadId === threadId ? null : current,
+              )
+            }
             aria-label="Dismiss repository update error"
           >
             <XIcon size={10} weight="bold" />

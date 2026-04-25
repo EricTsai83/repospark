@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import {
   CaretDownIcon,
@@ -28,6 +28,7 @@ import {
 import { Logo } from '@/components/logo';
 import { ImportRepoDialog } from '@/components/import-repo-dialog';
 import { useAsyncCallback } from '@/hooks/use-async-callback';
+import { toUserErrorMessage } from '@/lib/errors';
 import { cn } from '@/lib/utils';
 import type { RepositoryId, ThreadId } from '@/lib/types';
 
@@ -58,6 +59,7 @@ export function AppSidebar({
   onSelectThread,
   onDeleteThread,
   onImported,
+  onError,
 }: {
   repositories: Doc<'repositories'>[] | undefined;
   selectedRepositoryId: RepositoryId | null;
@@ -66,6 +68,7 @@ export function AppSidebar({
   onSelectThread: (id: ThreadId | null) => void;
   onDeleteThread: (id: ThreadId) => void;
   onImported: (repoId: RepositoryId, threadId: ThreadId | null) => void;
+  onError: (message: string | null) => void;
 }) {
   const threads = useQuery(api.chat.listThreads, {});
   const createThreadMutation = useMutation(api.chat.createThread);
@@ -82,11 +85,16 @@ export function AppSidebar({
 
   const [isCreatingThread, handleCreateThread] = useAsyncCallback(
     useCallback(async () => {
-      // No repositoryId: let the backend choose the default repo-less mode so
-      // the sidebar stays in lockstep with `createThread`'s source of truth.
-      const threadId = await createThreadMutation({});
-      onSelectThread(threadId);
-    }, [createThreadMutation, onSelectThread]),
+      onError(null);
+      try {
+        // No repositoryId: let the backend choose the default repo-less mode so
+        // the sidebar stays in lockstep with `createThread`'s source of truth.
+        const threadId = await createThreadMutation({});
+        onSelectThread(threadId);
+      } catch (error) {
+        onError(toUserErrorMessage(error, 'Failed to start a conversation.'));
+      }
+    }, [createThreadMutation, onError, onSelectThread]),
   );
 
   return (
@@ -156,8 +164,35 @@ function ThreadsSection({
   onSelectThread: (id: ThreadId | null) => void;
   onDeleteThread: (id: ThreadId) => void;
 }) {
+  const previousThreadCountRef = useRef<number | null>(null);
+  const [liveStatus, setLiveStatus] = useState('');
+
+  useEffect(() => {
+    if (threads === undefined) {
+      return;
+    }
+
+    const previousCount = previousThreadCountRef.current;
+    previousThreadCountRef.current = threads.length;
+
+    if (previousCount === null || previousCount === threads.length) {
+      return;
+    }
+
+    const delta = threads.length - previousCount;
+    const count = Math.abs(delta);
+    setLiveStatus(
+      delta > 0
+        ? `${count} new conversation${count === 1 ? '' : 's'}. ${threads.length} total.`
+        : `${count} conversation${count === 1 ? '' : 's'} removed. ${threads.length} total.`,
+    );
+  }, [threads]);
+
   return (
     <div className="flex flex-col gap-1 p-3">
+      <span className="sr-only" role="status" aria-live="polite">
+        {liveStatus}
+      </span>
       <div className="flex items-center justify-between px-1 pb-1">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           Threads
@@ -194,7 +229,7 @@ const ThreadsList = memo(function ThreadsList({
   onDeleteThread: (id: ThreadId) => void;
 }) {
   return (
-    <div className="flex flex-col animate-in fade-in slide-in-from-top-1 duration-300" aria-live="polite">
+    <div className="flex flex-col animate-in fade-in slide-in-from-top-1 duration-300">
       {threads.map((thread) => {
         const isSelected = selectedThreadId === thread._id;
         const repository = thread.repositoryId

@@ -97,9 +97,9 @@ export function ChatPanel({
         <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col gap-3 px-6 py-6">
           {!isChatLoading && chatMode === 'sandbox' && sandboxModeStatus && !sandboxModeAvailable ? (
             <AppNotice
-              title={getSandboxStatusTitle(sandboxModeStatus?.reasonCode)}
+              title={getSandboxStatusTitle(sandboxModeStatus.reasonCode)}
               message={
-                sandboxModeStatus?.message ??
+                sandboxModeStatus.message ??
                 'Sandbox mode is unavailable right now. Sync the repository to provision a fresh sandbox, or switch to a lighter mode.'
               }
               tone="warning"

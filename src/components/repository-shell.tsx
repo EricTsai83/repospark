@@ -277,6 +277,7 @@ export function RepositoryShell({
         onSelectThread={handleSelectThread}
         onDeleteThread={setThreadToDelete}
         onImported={handleImported}
+        onError={setActionError}
       />
 
       <SidebarInset>

@@ -70,11 +70,8 @@ export function getSandboxModeStatus(
   sandbox: SandboxAvailabilityInput | null | undefined,
   now = Date.now(),
 ): SandboxModeStatus {
-  const availability = getSandboxAvailability(sandbox, now);
-  return {
-    reasonCode: availability.reasonCode,
-    message: availability.message,
-  };
+  const { available: _available, ...status } = getSandboxAvailability(sandbox, now);
+  return status;
 }
 
 export function getSandboxUnavailableReason(

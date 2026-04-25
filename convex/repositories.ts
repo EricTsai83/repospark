@@ -3,6 +3,7 @@ import type { GenericDatabaseWriter } from 'convex/server';
 import type { DataModel, Id, TableNames } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { mutation, query, internalQuery, internalMutation, type MutationCtx } from './_generated/server';
+import { getDefaultThreadMode } from './chatModeResolver';
 import { requireViewerIdentity } from './lib/auth';
 import { getSandboxModeStatus } from './lib/sandboxAvailability';
 import { makeRepositoryTitle, parseGitHubUrl } from './lib/github';
@@ -294,7 +295,7 @@ export const createRepositoryImport = mutation({
         // Matches `resolveChatModes(true, 'none' | 'provisioning' | …).defaultMode`
         // for any repo-attached thread, so the auto-created default thread
         // and a manually-created one start on the same mode.
-        mode: 'docs',
+        mode: getDefaultThreadMode(true),
         lastMessageAt: Date.now(),
       });
 

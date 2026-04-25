@@ -107,6 +107,8 @@ describe('resolveChatModes', () => {
   test('getDefaultThreadMode centralizes the repo-attached default-mode rule', () => {
     expect(getDefaultThreadMode(false)).toBe('discuss');
     expect(getDefaultThreadMode(true)).toBe('docs');
+    expect(getDefaultThreadMode(false)).toBe(resolveChatModes(false, 'none').defaultMode);
+    expect(getDefaultThreadMode(true)).toBe(resolveChatModes(true, 'none').defaultMode);
   });
 
   test.each(cases)('$name', (testCase) => {
