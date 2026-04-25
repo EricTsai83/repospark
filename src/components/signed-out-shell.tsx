@@ -84,8 +84,8 @@ export function SignedOutShell() {
             {
               label: 'Ask',
               eyebrow: 'step 2',
-              title: 'Pick Docs or Sandbox mode.',
-              body: 'Docs answers from indexed data. Sandbox searches the live sandbox for any file.',
+              title: 'Pick Discuss, Docs, or Sandbox mode.',
+              body: 'Discuss stays lightweight, Docs uses indexed knowledge, and Sandbox searches the live sandbox for any file.',
             },
             {
               label: 'Capture',

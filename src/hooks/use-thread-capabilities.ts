@@ -2,7 +2,7 @@ import { useRef } from 'react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Doc } from '../../convex/_generated/dataModel';
-import type { ChatMode, ChatModeResolution } from '../../convex/chatModeResolver';
+import { getDefaultThreadMode, type ChatMode, type ChatModeResolution } from '../../convex/chatModeResolver';
 import type { RepositoryId, ThreadId } from '@/lib/types';
 
 export type SandboxLifecycleStatus = Doc<'sandboxes'>['status'];
@@ -48,7 +48,7 @@ const NO_THREAD_CAPABILITIES: ThreadCapabilities = {
   attachedRepository: null,
   sandboxStatus: null,
   availableModes: ['discuss'],
-  defaultMode: 'discuss',
+  defaultMode: getDefaultThreadMode(false),
   disabledReasons: NO_THREAD_DISABLED_REASONS,
 };
 

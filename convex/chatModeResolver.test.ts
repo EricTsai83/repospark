@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  getDefaultThreadMode,
   resolveChatModes,
   type ChatMode,
   type ChatModeSandboxStatus,
@@ -103,6 +104,11 @@ const cases: ChatModeResolverCase[] = [
 ];
 
 describe('resolveChatModes', () => {
+  test('getDefaultThreadMode centralizes the repo-attached default-mode rule', () => {
+    expect(getDefaultThreadMode(false)).toBe('discuss');
+    expect(getDefaultThreadMode(true)).toBe('docs');
+  });
+
   test.each(cases)('$name', (testCase) => {
     const result = resolveChatModes(testCase.hasAttachedRepo, testCase.sandboxStatus);
 

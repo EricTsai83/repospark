@@ -5,6 +5,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { mutation, query, internalAction, internalMutation, internalQuery } from './_generated/server';
+import { getDefaultThreadMode } from './chatModeResolver';
 import { requireViewerIdentity } from './lib/auth';
 import {
   CASCADE_BATCH_SIZE,
@@ -43,10 +44,6 @@ type ReplyContext = {
 type DbCtx = Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>;
 
 const STALE_CHAT_JOB_ERROR_MESSAGE = 'The assistant reply stalled and was automatically marked as failed.';
-
-function getDefaultThreadMode(repositoryId?: Id<'repositories'> | null) {
-  return repositoryId ? 'docs' : 'discuss';
-}
 
 async function getActiveChatJobForThread(ctx: MutationCtx, threadId: Id<'threads'>, now: number) {
   const jobs = await ctx.db
@@ -324,7 +321,7 @@ export const createThread = mutation({
     // `discuss` when there is no repo. Keeping this in lockstep with the
     // resolver means the persisted mode and the UI's preselected mode agree
     // on day one.
-    const defaultMode = getDefaultThreadMode(args.repositoryId);
+    const defaultMode = getDefaultThreadMode(!!args.repositoryId);
 
     return await ctx.db.insert('threads', {
       repositoryId: args.repositoryId,
@@ -377,7 +374,7 @@ export const setThreadRepository = mutation({
     // repo-dependent mode like `docs` / `sandbox`.
     await ctx.db.patch(args.threadId, {
       repositoryId: undefined,
-      mode: getDefaultThreadMode(null),
+      mode: getDefaultThreadMode(false),
     });
     return { repositoryId: null as null };
   },

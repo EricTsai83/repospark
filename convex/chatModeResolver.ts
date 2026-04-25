@@ -55,6 +55,10 @@ const DISABLED_REASON_SANDBOX_EXPIRED =
 const DISABLED_REASON_SANDBOX_FAILED =
   'Sandbox provisioning failed — provision a new sandbox to use Sandbox mode.';
 
+export function getDefaultThreadMode(hasAttachedRepo: boolean): ChatMode {
+  return hasAttachedRepo ? 'docs' : 'discuss';
+}
+
 export function resolveChatModes(
   hasAttachedRepo: boolean,
   sandboxStatus: ChatModeSandboxStatus,
@@ -62,7 +66,7 @@ export function resolveChatModes(
   if (!hasAttachedRepo) {
     return {
       availableModes: ['discuss'],
-      defaultMode: 'discuss',
+      defaultMode: getDefaultThreadMode(false),
       disabledReasons: {
         docs: DISABLED_REASON_DOCS_NO_REPO,
         sandbox: DISABLED_REASON_SANDBOX_NO_REPO,
@@ -74,31 +78,31 @@ export function resolveChatModes(
     case 'ready':
       return {
         availableModes: ['discuss', 'docs', 'sandbox'],
-        defaultMode: 'docs',
+        defaultMode: getDefaultThreadMode(true),
         disabledReasons: {},
       };
     case 'provisioning':
       return {
         availableModes: ['discuss', 'docs'],
-        defaultMode: 'docs',
+        defaultMode: getDefaultThreadMode(true),
         disabledReasons: { sandbox: DISABLED_REASON_SANDBOX_PROVISIONING },
       };
     case 'expired':
       return {
         availableModes: ['discuss', 'docs'],
-        defaultMode: 'docs',
+        defaultMode: getDefaultThreadMode(true),
         disabledReasons: { sandbox: DISABLED_REASON_SANDBOX_EXPIRED },
       };
     case 'failed':
       return {
         availableModes: ['discuss', 'docs'],
-        defaultMode: 'docs',
+        defaultMode: getDefaultThreadMode(true),
         disabledReasons: { sandbox: DISABLED_REASON_SANDBOX_FAILED },
       };
     case 'none':
       return {
         availableModes: ['discuss', 'docs'],
-        defaultMode: 'docs',
+        defaultMode: getDefaultThreadMode(true),
         disabledReasons: { sandbox: DISABLED_REASON_SANDBOX_NO_SANDBOX },
       };
   }
