@@ -278,7 +278,7 @@ async function createStreamingFixture(
       repositoryId,
       ownerTokenIdentifier,
       title: `${slug} thread`,
-      mode: 'fast',
+      mode: 'discuss',
       lastMessageAt: Date.now(),
     });
 
@@ -303,7 +303,7 @@ async function createStreamingFixture(
       ownerTokenIdentifier,
       role: 'user',
       status: 'completed',
-      mode: 'fast',
+      mode: 'discuss',
       content: 'How does this work?',
     });
 
@@ -314,7 +314,7 @@ async function createStreamingFixture(
       ownerTokenIdentifier,
       role: 'assistant',
       status: 'streaming',
-      mode: 'fast',
+      mode: 'discuss',
       content: '',
     });
 

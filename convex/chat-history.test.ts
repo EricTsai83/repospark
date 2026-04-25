@@ -53,7 +53,7 @@ describe('chat history ordering', () => {
         ownerTokenIdentifier,
         role: 'assistant',
         status: 'streaming',
-        mode: 'fast',
+        mode: 'discuss',
         content: '',
       });
     });
@@ -94,7 +94,7 @@ async function seedThreadWithMessages(
       repositoryId,
       ownerTokenIdentifier,
       title: 'History thread',
-      mode: 'fast',
+      mode: 'discuss',
       lastMessageAt: Date.now(),
     });
 
@@ -108,7 +108,7 @@ async function seedThreadWithMessages(
         ownerTokenIdentifier,
         role: index % 2 === 0 ? 'user' : 'assistant',
         status: 'completed',
-        mode: 'fast',
+        mode: 'discuss',
         content,
       });
       vi.advanceTimersByTime(1_000);

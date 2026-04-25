@@ -12,7 +12,7 @@ import {
   isLeaseActive,
   throwOperationAlreadyInProgress,
 } from './lib/rateLimit';
-import { getDeepModeAvailability } from './lib/sandboxAvailability';
+import { getSandboxAvailability } from './lib/sandboxAvailability';
 
 const DEEP_ANALYSIS_SANDBOX_TTL_EXTENSION_MS = 30 * 60_000;
 
@@ -83,9 +83,12 @@ export const requestDeepAnalysis = mutation({
     }
 
     const sandbox = repository.latestSandboxId ? await ctx.db.get(repository.latestSandboxId) : null;
-    const deepModeStatus = getDeepModeAvailability(sandbox);
-    if (!sandbox || !deepModeStatus.available) {
-      throw new Error(deepModeStatus.message ?? 'Deep analysis is unavailable.');
+    const sandboxAvailability = getSandboxAvailability(sandbox);
+    if (!sandboxAvailability.available) {
+      throw new Error(sandboxAvailability.message ?? 'Deep analysis is unavailable.');
+    }
+    if (!sandbox) {
+      throw new Error('Deep analysis is unavailable.');
     }
 
     const now = Date.now();

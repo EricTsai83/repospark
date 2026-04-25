@@ -15,7 +15,7 @@ async function seedThread(t: ReturnType<typeof convexTest>): Promise<Id<'threads
     ctx.db.insert('threads', {
       ownerTokenIdentifier: OWNER,
       title: 'design conversation',
-      mode: 'fast',
+      mode: 'discuss',
       lastMessageAt: Date.now(),
     }),
   );

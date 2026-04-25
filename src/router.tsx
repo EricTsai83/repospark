@@ -22,8 +22,23 @@ export const appRoutes: RouteObject[] = [
       {
         Component: ProtectedLayout,
         children: [
+          // `/chat` is the no-selection workspace entry point. ChatPage redirects
+          // it to the most recent thread (`/t/:threadId`) when one exists, or
+          // renders the dual-CTA empty state when none does. Per PRD #19 user
+          // story 27 ("most recent thread loads on landing").
           {
             path: 'chat',
+            lazy: loadChatRoute,
+          },
+          // PRD #19 user story 25: stable, shareable URLs for design threads.
+          {
+            path: 't/:threadId',
+            lazy: loadChatRoute,
+          },
+          // PRD #19 user story 26: stable, shareable URLs for repository overviews
+          // (artifacts + threads grounded in that repo).
+          {
+            path: 'r/:repoId',
             lazy: loadChatRoute,
           },
         ],

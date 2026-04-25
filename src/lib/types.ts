@@ -1,9 +1,19 @@
 import type { Id } from '../../convex/_generated/dataModel';
+import type { ChatMode } from '../../convex/chatModeResolver';
 
 export type RepositoryId = Id<'repositories'>;
 export type ThreadId = Id<'threads'>;
 export type MessageId = Id<'messages'>;
-export type ChatMode = 'fast' | 'deep';
+
+/**
+ * UI-level chat mode the user picks in the ChatPanel selector. The frontend
+ * type and the schema-level `threads.mode` / `messages.mode` enum share the
+ * exact same string literals (`discuss | docs | sandbox`) — there is no
+ * mapping layer between them, by design (PRD §"Architectural reversal":
+ * "Frontend and backend share the same mode enum"). Re-exported here so
+ * frontend imports do not have to reach into `convex/` for the type.
+ */
+export type { ChatMode };
 
 export type ActiveMessageStream = {
   assistantMessageId: MessageId;
@@ -12,14 +22,14 @@ export type ActiveMessageStream = {
   lastAppendedAt: number;
 };
 
-export type DeepModeReasonCode =
+export type SandboxModeReasonCode =
   | 'available'
   | 'missing_sandbox'
   | 'sandbox_unavailable'
   | 'sandbox_expired'
   | 'sandbox_provisioning';
 
-export type DeepModeStatus = {
-  reasonCode: DeepModeReasonCode;
+export type SandboxModeStatus = {
+  reasonCode: SandboxModeReasonCode;
   message: string | null;
 };

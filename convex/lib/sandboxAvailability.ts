@@ -1,32 +1,34 @@
-export type DeepModeSandboxLike = {
+export type SandboxAvailabilityInput = {
   status: 'provisioning' | 'ready' | 'stopped' | 'archived' | 'failed';
   ttlExpiresAt: number;
   remoteId?: string;
   repoPath?: string;
 };
 
-export type DeepModeUnavailableCode =
+export type SandboxUnavailableCode =
   | 'missing_sandbox'
   | 'sandbox_unavailable'
   | 'sandbox_expired'
   | 'sandbox_provisioning';
 
-export type DeepModeAvailability = {
+export type SandboxAvailability = {
   available: boolean;
-  reasonCode: 'available' | DeepModeUnavailableCode;
+  reasonCode: 'available' | SandboxUnavailableCode;
   message: string | null;
 };
 
-export function getDeepModeAvailability(
-  sandbox: DeepModeSandboxLike | null | undefined,
+export type SandboxModeStatus = Pick<SandboxAvailability, 'reasonCode' | 'message'>;
+
+export function getSandboxAvailability(
+  sandbox: SandboxAvailabilityInput | null | undefined,
   now = Date.now(),
-): DeepModeAvailability {
+): SandboxAvailability {
   if (!sandbox) {
     return {
       available: false,
       reasonCode: 'missing_sandbox',
       message:
-        'Deep analysis is unavailable because no sandbox is ready for this repository yet. Sync the repository to provision one.',
+        'A live sandbox is unavailable because no sandbox is ready for this repository yet. Sync the repository to provision one.',
     };
   }
 
@@ -35,7 +37,7 @@ export function getDeepModeAvailability(
       available: false,
       reasonCode: 'sandbox_unavailable',
       message:
-        'Deep analysis is unavailable because the sandbox is no longer available. Sync the repository to provision a fresh sandbox.',
+        'A live sandbox is unavailable because the sandbox is no longer available. Sync the repository to provision a fresh sandbox.',
     };
   }
 
@@ -44,7 +46,7 @@ export function getDeepModeAvailability(
       available: false,
       reasonCode: 'sandbox_expired',
       message:
-        'Deep analysis is unavailable because the sandbox expired. Sync the repository to provision a fresh sandbox.',
+        'A live sandbox is unavailable because the sandbox expired. Sync the repository to provision a fresh sandbox.',
     };
   }
 
@@ -53,7 +55,7 @@ export function getDeepModeAvailability(
       available: false,
       reasonCode: 'sandbox_provisioning',
       message:
-        'Deep analysis is unavailable because the sandbox is still provisioning. Wait for the import to finish or sync the repository again.',
+        'A live sandbox is unavailable because the sandbox is still provisioning. Wait for the import to finish or sync the repository again.',
     };
   }
 
@@ -64,16 +66,24 @@ export function getDeepModeAvailability(
   };
 }
 
-export function getDeepModeUnavailableReason(
-  sandbox: DeepModeSandboxLike | null | undefined,
+export function getSandboxModeStatus(
+  sandbox: SandboxAvailabilityInput | null | undefined,
   now = Date.now(),
-) {
-  return getDeepModeAvailability(sandbox, now).message;
+): SandboxModeStatus {
+  const { available: _available, ...status } = getSandboxAvailability(sandbox, now);
+  return status;
 }
 
-export function isDeepModeAvailable(
-  sandbox: DeepModeSandboxLike | null | undefined,
+export function getSandboxUnavailableReason(
+  sandbox: SandboxAvailabilityInput | null | undefined,
   now = Date.now(),
 ) {
-  return getDeepModeAvailability(sandbox, now).available;
+  return getSandboxAvailability(sandbox, now).message;
+}
+
+export function isSandboxAvailable(
+  sandbox: SandboxAvailabilityInput | null | undefined,
+  now = Date.now(),
+) {
+  return getSandboxAvailability(sandbox, now).available;
 }

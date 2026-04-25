@@ -64,6 +64,8 @@ export function RepoInfoPopover({
   repoDetail: TopBarRepoDetail;
   title: string;
 }) {
+  const isSandboxAvailable = repoDetail.sandboxModeStatus.reasonCode === 'available';
+
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -96,9 +98,9 @@ export function RepoInfoPopover({
             />
           ) : null}
           <InfoRow
-            label="Deep mode"
-            value={repoDetail.deepModeAvailable ? 'Available' : 'Unavailable'}
-            highlight={repoDetail.deepModeAvailable ? 'positive' : 'negative'}
+            label="Sandbox mode"
+            value={isSandboxAvailable ? 'Available' : 'Unavailable'}
+            highlight={isSandboxAvailable ? 'positive' : 'negative'}
           />
         </div>
       </PopoverContent>

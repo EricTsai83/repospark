@@ -3,8 +3,9 @@ import type { GenericDatabaseWriter } from 'convex/server';
 import type { DataModel, Id, TableNames } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { mutation, query, internalQuery, internalMutation, type MutationCtx } from './_generated/server';
+import { getDefaultThreadMode } from './chatModeResolver';
 import { requireViewerIdentity } from './lib/auth';
-import { getDeepModeAvailability } from './lib/sandboxAvailability';
+import { getSandboxModeStatus } from './lib/sandboxAvailability';
 import { makeRepositoryTitle, parseGitHubUrl } from './lib/github';
 import { CASCADE_BATCH_SIZE } from './lib/constants';
 import {
@@ -190,7 +191,7 @@ export const getRepositoryDetail = query({
 
     const sandbox = repository.latestSandboxId ? await ctx.db.get(repository.latestSandboxId) : null;
 
-    const deepModeStatus = getDeepModeAvailability(sandbox);
+    const sandboxModeStatus = getSandboxModeStatus(sandbox);
 
     // Determine whether the remote has commits we haven't synced yet
     const hasRemoteUpdates =
@@ -205,11 +206,7 @@ export const getRepositoryDetail = query({
       threads,
       fileCount,
       fileCountLabel,
-      deepModeAvailable: deepModeStatus.available,
-      deepModeStatus: {
-        reasonCode: deepModeStatus.reasonCode,
-        message: deepModeStatus.message,
-      },
+      sandboxModeStatus,
       hasRemoteUpdates,
       sandbox: sandbox
         ? {
@@ -295,7 +292,10 @@ export const createRepositoryImport = mutation({
         repositoryId,
         ownerTokenIdentifier: identity.tokenIdentifier,
         title: `${makeRepositoryTitle(parsed.fullName)} chat`,
-        mode: 'fast',
+        // Matches `resolveChatModes(true, 'none' | 'provisioning' | …).defaultMode`
+        // for any repo-attached thread, so the auto-created default thread
+        // and a manually-created one start on the same mode.
+        mode: getDefaultThreadMode(true),
         lastMessageAt: Date.now(),
       });
 

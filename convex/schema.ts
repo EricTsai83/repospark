@@ -84,7 +84,26 @@ const artifactKind = v.union(
   v.literal('design_review'),
 );
 
-const threadMode = v.union(v.literal('fast'), v.literal('deep'));
+/**
+ * Chat mode persisted on `threads.mode` and `messages.mode`. The enum mirrors
+ * the UI's mode selector verbatim (no legacy quick/deep aliasing) per the PRD's
+ * Architectural reversal section: frontend and backend share one vocabulary.
+ *
+ * - `discuss`  — LLM training only; no repo, no sandbox.
+ * - `docs`     — RAG over the user's accumulated artifacts for the attached
+ *                repository. Requires `thread.repositoryId`.
+ * - `sandbox`  — live filesystem + execution in a Daytona sandbox. Requires
+ *                `thread.repositoryId` and the repo's latest sandbox to be
+ *                in `ready` state at send time.
+ *
+ * Mode preconditions (repo-required, sandbox-required) are enforced in
+ * `chat.sendMessage` / `chat.createThread`, not in the schema.
+ */
+const threadMode = v.union(
+  v.literal('discuss'),
+  v.literal('docs'),
+  v.literal('sandbox'),
+);
 
 const messageRole = v.union(
   v.literal('system'),

@@ -35,7 +35,7 @@ describe('chat reply context', () => {
         repositoryId,
         ownerTokenIdentifier,
         title: 'Context thread',
-        mode: 'fast',
+        mode: 'discuss',
         lastMessageAt: Date.now(),
       });
 
@@ -223,7 +223,7 @@ describe('chat reply context', () => {
         repositoryId,
         ownerTokenIdentifier,
         title: 'Query-aware thread',
-        mode: 'fast',
+        mode: 'discuss',
         lastMessageAt: Date.now(),
       });
 
@@ -337,7 +337,7 @@ describe('chat reply context', () => {
         ownerTokenIdentifier,
         role: 'user',
         status: 'completed',
-        mode: 'fast',
+        mode: 'discuss',
         content: 'How does auth work?',
       });
 
@@ -381,7 +381,7 @@ describe('chat reply context', () => {
         repositoryId,
         ownerTokenIdentifier,
         title: 'Fallback thread',
-        mode: 'fast',
+        mode: 'discuss',
         lastMessageAt: Date.now(),
       });
 
@@ -442,7 +442,7 @@ describe('chat reply context', () => {
         ownerTokenIdentifier,
         role: 'user',
         status: 'completed',
-        mode: 'fast',
+        mode: 'discuss',
         content: 'quaternion entanglement neutron lattice',
       });
 
@@ -528,7 +528,7 @@ describe('chat reply context', () => {
       return await ctx.db.insert('threads', {
         ownerTokenIdentifier,
         title: 'Design conversation',
-        mode: 'fast',
+        mode: 'discuss',
         lastMessageAt: Date.now(),
       });
     });

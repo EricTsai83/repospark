@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ChatPanel } from '@/components/chat-panel';
 import { JobRow } from '@/components/job-row';
-import type { ActiveMessageStream, ChatMode, DeepModeStatus, ThreadId } from '@/lib/types';
+import type { ActiveMessageStream, ChatMode, SandboxModeStatus, ThreadId } from '@/lib/types';
 
 export function RepositoryTabs({
   activeTab,
@@ -20,10 +20,11 @@ export function RepositoryTabs({
   setChatInput,
   chatMode,
   setChatMode,
+  availableModes,
+  disabledModeReasons,
   isSending,
   onSendMessage,
-  deepModeAvailable,
-  deepModeStatus,
+  sandboxModeStatus,
   isSyncing,
   onSync,
 }: {
@@ -39,10 +40,11 @@ export function RepositoryTabs({
   setChatInput: (value: string) => void;
   chatMode: ChatMode;
   setChatMode: (value: ChatMode) => void;
+  availableModes: readonly ChatMode[];
+  disabledModeReasons: Partial<Record<ChatMode, string>>;
   isSending: boolean;
   onSendMessage: (e: FormEvent<HTMLFormElement>) => Promise<void>;
-  deepModeAvailable: boolean;
-  deepModeStatus: DeepModeStatus | null;
+  sandboxModeStatus: SandboxModeStatus | null;
   isSyncing: boolean;
   onSync: () => void;
 }) {
@@ -64,10 +66,11 @@ export function RepositoryTabs({
           setChatInput={setChatInput}
           chatMode={chatMode}
           setChatMode={setChatMode}
+          availableModes={availableModes}
+          disabledModeReasons={disabledModeReasons}
           isSending={isSending}
           onSendMessage={onSendMessage}
-          deepModeAvailable={deepModeAvailable}
-          deepModeStatus={deepModeStatus}
+          sandboxModeStatus={sandboxModeStatus}
           isSyncing={isSyncing}
           onSync={onSync}
         />

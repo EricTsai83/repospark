@@ -106,7 +106,7 @@ describe('rate limits and interactive job guards', () => {
         ownerTokenIdentifier,
         role: 'assistant',
         status: 'streaming',
-        mode: 'fast',
+        mode: 'discuss',
         content: '',
       });
     });
@@ -251,7 +251,7 @@ describe('rate limits and interactive job guards', () => {
         ownerTokenIdentifier,
         role: 'user',
         status: 'completed',
-        mode: 'fast',
+        mode: 'discuss',
         content: 'Hello?',
       });
 
@@ -262,7 +262,7 @@ describe('rate limits and interactive job guards', () => {
         ownerTokenIdentifier,
         role: 'assistant',
         status: 'streaming',
-        mode: 'fast',
+        mode: 'discuss',
         content: '',
       });
 
@@ -391,7 +391,7 @@ async function createRepositoryFixture(
       repositoryId,
       ownerTokenIdentifier,
       title: `${slug} thread`,
-      mode: 'fast',
+      mode: 'discuss',
       lastMessageAt: Date.now(),
     });
 

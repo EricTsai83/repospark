@@ -3,6 +3,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internalQuery, query } from './_generated/server';
 import type { QueryCtx } from './_generated/server';
 import { requireViewerIdentity } from './lib/auth';
+import { getSandboxModeStatus, type SandboxModeStatus } from './lib/sandboxAvailability';
 import {
   resolveChatModes,
   type ChatModeResolution,
@@ -15,6 +16,7 @@ export interface ThreadContext {
   thread: Doc<'threads'>;
   attachedRepository: Doc<'repositories'> | null;
   sandboxStatus: SandboxTableStatus | null;
+  sandboxModeStatus: SandboxModeStatus | null;
   chatModes: ChatModeResolution;
 }
 
@@ -22,7 +24,7 @@ export interface ThreadContext {
  * Maps the sandbox table status enum onto the ChatModeResolver's input domain.
  *
  * The sandbox table tracks provider-level lifecycle (`stopped`, `archived`, ...)
- * but the resolver only cares about whether deep mode is available right now.
+ * but the resolver only cares about whether sandbox mode is available right now.
  * Both `stopped` and `archived` collapse to `expired` for resolver purposes —
  * they are not currently usable but the user can re-provision a sandbox.
  */
@@ -54,12 +56,16 @@ async function enrichThreadContext(
 ): Promise<ThreadContext> {
   let attachedRepository: Doc<'repositories'> | null = null;
   let sandboxStatus: SandboxTableStatus | null = null;
+  let sandboxModeStatus: SandboxModeStatus | null = null;
 
   if (thread.repositoryId) {
     attachedRepository = await ctx.db.get(thread.repositoryId);
     if (attachedRepository?.latestSandboxId) {
       const sandbox = await ctx.db.get(attachedRepository.latestSandboxId);
       sandboxStatus = sandbox?.status ?? null;
+      sandboxModeStatus = getSandboxModeStatus(sandbox);
+    } else if (attachedRepository) {
+      sandboxModeStatus = getSandboxModeStatus(null);
     }
   }
 
@@ -72,6 +78,7 @@ async function enrichThreadContext(
     thread,
     attachedRepository,
     sandboxStatus,
+    sandboxModeStatus,
     chatModes,
   };
 }

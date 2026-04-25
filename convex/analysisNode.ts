@@ -5,7 +5,7 @@ import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { internalAction } from './_generated/server';
 import { runFocusedInspection } from './daytona';
-import { getDeepModeUnavailableReason } from './lib/sandboxAvailability';
+import { getSandboxUnavailableReason } from './lib/sandboxAvailability';
 import { createDeepAnalysisMarkdown } from './lib/repoAnalysis';
 import { logErrorWithId } from './lib/observability';
 
@@ -38,7 +38,7 @@ export const runDeepAnalysis = internalAction({
         repositoryId: args.repositoryId,
       })) as DeepAnalysisContext;
 
-      const unavailableReason = getDeepModeUnavailableReason(
+      const unavailableReason = getSandboxUnavailableReason(
         context.sandboxStatus && context.ttlExpiresAt !== undefined
           ? {
               status: context.sandboxStatus,

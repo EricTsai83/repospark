@@ -11,14 +11,14 @@ import {
   DialogTitle,
   DialogClose,
 } from '@/components/ui/dialog';
+import type { SandboxModeStatus } from '@/lib/types';
 
 export function DeepAnalysisDialog({
   open,
   onOpenChange,
   analysisPrompt,
   onAnalysisPromptChange,
-  deepModeAvailable,
-  deepModeReason,
+  sandboxModeStatus,
   errorMessage,
   isRunning,
   onRun,
@@ -27,20 +27,21 @@ export function DeepAnalysisDialog({
   onOpenChange: (open: boolean) => void;
   analysisPrompt: string;
   onAnalysisPromptChange: (value: string) => void;
-  deepModeAvailable: boolean;
-  deepModeReason?: string | null;
+  sandboxModeStatus: SandboxModeStatus;
   errorMessage?: string | null;
   isRunning: boolean;
   onRun: () => Promise<void>;
 }) {
+  const sandboxAvailable = sandboxModeStatus.reasonCode === 'available';
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Deep analysis</DialogTitle>
           <DialogDescription>
-            Searches the live sandbox filesystem for files matching your prompt. Unlike Quick mode which only uses
-            pre-indexed data, Deep mode can find any file in the repository.
+            Searches the live sandbox filesystem for files matching your prompt. Unlike Docs mode which only uses
+            pre-indexed data, Sandbox mode can find any file in the repository.
           </DialogDescription>
         </DialogHeader>
         <Textarea
@@ -48,10 +49,10 @@ export function DeepAnalysisDialog({
           onChange={(e) => onAnalysisPromptChange(e.target.value)}
           className="min-h-40"
         />
-        {!deepModeAvailable ? (
+        {!sandboxAvailable ? (
           <AppNotice
             title="Deep analysis unavailable"
-            message={deepModeReason ?? 'Deep analysis is unavailable right now. Sync the repository to provision a fresh sandbox.'}
+            message={sandboxModeStatus.message ?? 'A live sandbox is unavailable right now. Sync the repository to provision a fresh sandbox.'}
             tone="warning"
           />
         ) : null}
@@ -66,7 +67,7 @@ export function DeepAnalysisDialog({
             type="button"
             variant="default"
             className="min-w-40"
-            disabled={isRunning || !analysisPrompt.trim() || !deepModeAvailable}
+            disabled={isRunning || !analysisPrompt.trim() || !sandboxAvailable}
             onClick={() => {
               void onRun();
             }}

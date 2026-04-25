@@ -5,6 +5,14 @@ import { useAsyncCallback } from '@/hooks/use-async-callback';
 import { toUserErrorMessage } from '@/lib/errors';
 import type { ChatMode, RepositoryId, ThreadId } from '@/lib/types';
 
+/**
+ * Aggregates all repo / thread mutations the workspace can fire and exposes
+ * pending flags for the dialogs that wrap them. The hook is selection-aware
+ * but selection-state-agnostic: callers tell us which thread / repo is
+ * currently in view, and we hand back navigation hooks via
+ * `onAfterDeleteThread` / `onAfterDeleteRepo` so the parent can update the URL
+ * (or do whatever it needs) once a destructive mutation succeeds.
+ */
 export function useRepositoryActions({
   selectedRepositoryId,
   selectedThreadId,
@@ -15,8 +23,8 @@ export function useRepositoryActions({
   setChatInput,
   setActionError,
   setAnalysisError,
-  setSelectedRepositoryId,
-  setSelectedThreadId,
+  onAfterDeleteThread,
+  onAfterDeleteRepo,
   setThreadToDelete,
   setShowDeleteRepoDialog,
   setShowAnalysisDialog,
@@ -30,8 +38,14 @@ export function useRepositoryActions({
   setChatInput: (value: string) => void;
   setActionError: (value: string | null) => void;
   setAnalysisError: (value: string | null) => void;
-  setSelectedRepositoryId: (value: RepositoryId | null) => void;
-  setSelectedThreadId: (value: ThreadId | null) => void;
+  /**
+   * Fired after a thread has been deleted. The argument is the deleted thread
+   * id; callers compare it with the currently visible thread to decide
+   * whether to navigate away.
+   */
+  onAfterDeleteThread: (deletedThreadId: ThreadId) => void;
+  /** Fired after the active repository has been deleted. */
+  onAfterDeleteRepo: () => void;
   setThreadToDelete: (value: ThreadId | null) => void;
   setShowDeleteRepoDialog: (value: boolean) => void;
   setShowAnalysisDialog: (value: boolean) => void;
@@ -49,7 +63,11 @@ export function useRepositoryActions({
         if (!selectedThreadId || !chatInput.trim()) return;
         setActionError(null);
         try {
-          await sendMessageMutation({ threadId: selectedThreadId, content: chatInput, mode: chatMode });
+          await sendMessageMutation({
+            threadId: selectedThreadId,
+            content: chatInput,
+            mode: chatMode,
+          });
           setChatInput('');
         } catch (error) {
           setActionError(toUserErrorMessage(error, 'Failed to send the message.'));
@@ -93,12 +111,24 @@ export function useRepositoryActions({
       setActionError(null);
       try {
         await deleteThreadMutation({ threadId: threadToDelete });
-        if (selectedThreadId === threadToDelete) setSelectedThreadId(null);
+        const deletedId = threadToDelete;
         setThreadToDelete(null);
+        // Notify the parent only after the dialog is reset so navigation does
+        // not race with the controlled-dialog close animation.
+        if (selectedThreadId === deletedId) {
+          onAfterDeleteThread(deletedId);
+        }
       } catch (error) {
         setActionError(toUserErrorMessage(error, 'Failed to delete the thread.'));
       }
-    }, [deleteThreadMutation, selectedThreadId, setActionError, setSelectedThreadId, setThreadToDelete, threadToDelete]),
+    }, [
+      deleteThreadMutation,
+      onAfterDeleteThread,
+      selectedThreadId,
+      setActionError,
+      setThreadToDelete,
+      threadToDelete,
+    ]),
   );
 
   const [isDeletingRepo, handleDeleteRepo] = useAsyncCallback(
@@ -107,13 +137,18 @@ export function useRepositoryActions({
       setActionError(null);
       try {
         await deleteRepositoryMutation({ repositoryId: selectedRepositoryId });
-        setSelectedRepositoryId(null);
-        setSelectedThreadId(null);
         setShowDeleteRepoDialog(false);
+        onAfterDeleteRepo();
       } catch (error) {
         setActionError(toUserErrorMessage(error, 'Failed to delete the repository.'));
       }
-    }, [deleteRepositoryMutation, selectedRepositoryId, setActionError, setSelectedRepositoryId, setSelectedThreadId, setShowDeleteRepoDialog]),
+    }, [
+      deleteRepositoryMutation,
+      onAfterDeleteRepo,
+      selectedRepositoryId,
+      setActionError,
+      setShowDeleteRepoDialog,
+    ]),
   );
 
   return {

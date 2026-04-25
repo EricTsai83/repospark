@@ -75,7 +75,7 @@ async function seedThread(
       repositoryId: repositoryId ?? undefined,
       ownerTokenIdentifier: owner,
       title: 'thread',
-      mode: 'fast',
+      mode: 'discuss',
       lastMessageAt: Date.now(),
     });
 
@@ -90,7 +90,7 @@ describe('getThreadContext (internal)', () => {
       const id = await ctx.db.insert('threads', {
         ownerTokenIdentifier: OWNER,
         title: 'temp',
-        mode: 'fast',
+        mode: 'discuss',
         lastMessageAt: Date.now(),
       });
       await ctx.db.delete(id);
@@ -103,7 +103,7 @@ describe('getThreadContext (internal)', () => {
     expect(result).toBeNull();
   });
 
-  test('thread without a repository: only general mode is available', async () => {
+  test('thread without a repository: only discuss mode is available', async () => {
     const t = convexTest(schema, modules);
     const { threadId } = await seedThread(t, { withRepository: false });
 
@@ -114,12 +114,12 @@ describe('getThreadContext (internal)', () => {
     expect(result).not.toBeNull();
     expect(result!.attachedRepository).toBeNull();
     expect(result!.sandboxStatus).toBeNull();
-    expect(result!.chatModes.availableModes).toEqual(['general']);
-    expect(result!.chatModes.defaultMode).toBe('general');
-    expect(Object.keys(result!.chatModes.disabledReasons).sort()).toEqual(['deep', 'grounded']);
+    expect(result!.chatModes.availableModes).toEqual(['discuss']);
+    expect(result!.chatModes.defaultMode).toBe('discuss');
+    expect(Object.keys(result!.chatModes.disabledReasons).sort()).toEqual(['docs', 'sandbox']);
   });
 
-  test('thread with repository but no sandbox: general + grounded available', async () => {
+  test('thread with repository but no sandbox: discuss + docs available', async () => {
     const t = convexTest(schema, modules);
     const { threadId, repositoryId } = await seedThread(t, { withRepository: true });
 
@@ -129,12 +129,12 @@ describe('getThreadContext (internal)', () => {
 
     expect(result!.attachedRepository?._id).toBe(repositoryId);
     expect(result!.sandboxStatus).toBeNull();
-    expect(result!.chatModes.availableModes).toEqual(['general', 'grounded']);
-    expect(result!.chatModes.defaultMode).toBe('grounded');
-    expect(Object.keys(result!.chatModes.disabledReasons)).toEqual(['deep']);
+    expect(result!.chatModes.availableModes).toEqual(['discuss', 'docs']);
+    expect(result!.chatModes.defaultMode).toBe('docs');
+    expect(Object.keys(result!.chatModes.disabledReasons)).toEqual(['sandbox']);
   });
 
-  test('thread with repository and ready sandbox: all three modes available, default grounded', async () => {
+  test('thread with repository and ready sandbox: all three modes available, default docs', async () => {
     const t = convexTest(schema, modules);
     const { threadId } = await seedThread(t, {
       withRepository: true,
@@ -146,8 +146,8 @@ describe('getThreadContext (internal)', () => {
     });
 
     expect(result!.sandboxStatus).toBe('ready');
-    expect(result!.chatModes.availableModes).toEqual(['general', 'grounded', 'deep']);
-    expect(result!.chatModes.defaultMode).toBe('grounded');
+    expect(result!.chatModes.availableModes).toEqual(['discuss', 'docs', 'sandbox']);
+    expect(result!.chatModes.defaultMode).toBe('docs');
     expect(result!.chatModes.disabledReasons).toEqual({});
   });
 
@@ -163,8 +163,8 @@ describe('getThreadContext (internal)', () => {
     });
 
     expect(result!.sandboxStatus).toBe('stopped');
-    expect(result!.chatModes.availableModes).toEqual(['general', 'grounded']);
-    expect(result!.chatModes.disabledReasons.deep).toMatch(/expired|provision a new sandbox/i);
+    expect(result!.chatModes.availableModes).toEqual(['discuss', 'docs']);
+    expect(result!.chatModes.disabledReasons.sandbox).toMatch(/expired|provision a new sandbox/i);
   });
 
   test('thread with archived sandbox maps to expired in resolver input', async () => {
@@ -179,11 +179,11 @@ describe('getThreadContext (internal)', () => {
     });
 
     expect(result!.sandboxStatus).toBe('archived');
-    expect(result!.chatModes.availableModes).toEqual(['general', 'grounded']);
-    expect(result!.chatModes.disabledReasons.deep).toMatch(/expired|provision a new sandbox/i);
+    expect(result!.chatModes.availableModes).toEqual(['discuss', 'docs']);
+    expect(result!.chatModes.disabledReasons.sandbox).toMatch(/expired|provision a new sandbox/i);
   });
 
-  test('thread with provisioning sandbox surfaces a provisioning hint for deep mode', async () => {
+  test('thread with provisioning sandbox surfaces a provisioning hint for sandbox mode', async () => {
     const t = convexTest(schema, modules);
     const { threadId } = await seedThread(t, {
       withRepository: true,
@@ -195,11 +195,11 @@ describe('getThreadContext (internal)', () => {
     });
 
     expect(result!.sandboxStatus).toBe('provisioning');
-    expect(result!.chatModes.availableModes).toEqual(['general', 'grounded']);
-    expect(result!.chatModes.disabledReasons.deep).toMatch(/provisioning/i);
+    expect(result!.chatModes.availableModes).toEqual(['discuss', 'docs']);
+    expect(result!.chatModes.disabledReasons.sandbox).toMatch(/provisioning/i);
   });
 
-  test('thread with failed sandbox surfaces a failed hint for deep mode', async () => {
+  test('thread with failed sandbox surfaces a failed hint for sandbox mode', async () => {
     const t = convexTest(schema, modules);
     const { threadId } = await seedThread(t, {
       withRepository: true,
@@ -211,7 +211,7 @@ describe('getThreadContext (internal)', () => {
     });
 
     expect(result!.sandboxStatus).toBe('failed');
-    expect(result!.chatModes.disabledReasons.deep).toMatch(/failed|provision a new sandbox/i);
+    expect(result!.chatModes.disabledReasons.sandbox).toMatch(/failed|provision a new sandbox/i);
   });
 });
 

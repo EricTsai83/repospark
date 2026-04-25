@@ -3,20 +3,31 @@
  * to (availableModes, defaultMode, disabledReasons).
  *
  * Single source of truth for chat-mode availability used by both the UI mode
- * selector and any backend gating that needs the same answer.
+ * selector and the `chat.sendMessage` / `chat.createThread` validators on the
+ * backend. The same `ChatMode` literals are persisted on `threads.mode` and
+ * `messages.mode`, so log-line `mode: 'docs'` matches the UI label "Docs"
+ * exactly — no legacy quick/deep aliasing.
+ *
+ * Mode semantics (PRD #19, Architectural reversal):
+ *   - `discuss`  — LLM training only; no repo, no sandbox. Pre-design talk.
+ *   - `docs`     — RAG over user-produced artifacts (ADRs, diagrams, analyses)
+ *                  for the attached repository.
+ *   - `sandbox`  — live filesystem + execution in a Daytona sandbox; the
+ *                  canonical source of truth for current code state.
  *
  * Design choices:
- *   - `defaultMode` never auto-selects `'deep'` even when a sandbox is ready.
- *     Deep mode is sandbox-backed and therefore opt-in; defaulting to it would
- *     auto-spend sandbox quota on every new thread.
+ *   - `defaultMode` never auto-selects `'sandbox'` even when a sandbox is
+ *     ready. Sandbox mode is the most expensive (sandbox compute + slower
+ *     end-to-end) so it is opt-in; defaulting to it would auto-spend sandbox
+ *     quota on every new thread.
  *   - When the repository is not attached, `disabledReasons` still carries an
- *     unlock hint for `grounded` and `deep` so the UI can render the tooltip
+ *     unlock hint for `docs` and `sandbox` so the UI can render the tooltip
  *     promised by US 14 ("disabled modes show a tooltip explaining how to
  *     unlock them"). A mode that is in `disabledReasons` is, by construction,
  *     not in `availableModes`.
  */
 
-export type ChatMode = 'general' | 'grounded' | 'deep';
+export type ChatMode = 'discuss' | 'docs' | 'sandbox';
 
 export type ChatModeSandboxStatus =
   | 'none'
@@ -31,18 +42,22 @@ export interface ChatModeResolution {
   disabledReasons: Partial<Record<ChatMode, string>>;
 }
 
-const DISABLED_REASON_GROUNDED_NO_REPO =
-  'Attach a repository to use grounded mode.';
-const DISABLED_REASON_DEEP_NO_REPO =
-  'Attach a repository with a ready sandbox to use deep mode.';
-const DISABLED_REASON_DEEP_NO_SANDBOX =
-  'Provision a sandbox to use deep mode.';
-const DISABLED_REASON_DEEP_PROVISIONING =
-  'Sandbox is provisioning — deep mode will be available once it is ready.';
-const DISABLED_REASON_DEEP_EXPIRED =
-  'Sandbox expired — provision a new sandbox to use deep mode.';
-const DISABLED_REASON_DEEP_FAILED =
-  'Sandbox failed — provision a new sandbox to use deep mode.';
+const DISABLED_REASON_DOCS_NO_REPO =
+  'Attach a repository to use Docs mode.';
+const DISABLED_REASON_SANDBOX_NO_REPO =
+  'Attach a repository and provision a sandbox to use Sandbox mode.';
+const DISABLED_REASON_SANDBOX_NO_SANDBOX =
+  'Provision a sandbox to use Sandbox mode.';
+const DISABLED_REASON_SANDBOX_PROVISIONING =
+  'Sandbox is provisioning — Sandbox mode will be available once it is ready.';
+const DISABLED_REASON_SANDBOX_EXPIRED =
+  'Sandbox expired — provision a new sandbox to use Sandbox mode.';
+const DISABLED_REASON_SANDBOX_FAILED =
+  'Sandbox provisioning failed — provision a new sandbox to use Sandbox mode.';
+
+export function getDefaultThreadMode(hasAttachedRepo: boolean): ChatMode {
+  return hasAttachedRepo ? 'docs' : 'discuss';
+}
 
 export function resolveChatModes(
   hasAttachedRepo: boolean,
@@ -50,11 +65,11 @@ export function resolveChatModes(
 ): ChatModeResolution {
   if (!hasAttachedRepo) {
     return {
-      availableModes: ['general'],
-      defaultMode: 'general',
+      availableModes: ['discuss'],
+      defaultMode: getDefaultThreadMode(false),
       disabledReasons: {
-        grounded: DISABLED_REASON_GROUNDED_NO_REPO,
-        deep: DISABLED_REASON_DEEP_NO_REPO,
+        docs: DISABLED_REASON_DOCS_NO_REPO,
+        sandbox: DISABLED_REASON_SANDBOX_NO_REPO,
       },
     };
   }
@@ -62,33 +77,33 @@ export function resolveChatModes(
   switch (sandboxStatus) {
     case 'ready':
       return {
-        availableModes: ['general', 'grounded', 'deep'],
-        defaultMode: 'grounded',
+        availableModes: ['discuss', 'docs', 'sandbox'],
+        defaultMode: getDefaultThreadMode(true),
         disabledReasons: {},
       };
     case 'provisioning':
       return {
-        availableModes: ['general', 'grounded'],
-        defaultMode: 'grounded',
-        disabledReasons: { deep: DISABLED_REASON_DEEP_PROVISIONING },
+        availableModes: ['discuss', 'docs'],
+        defaultMode: getDefaultThreadMode(true),
+        disabledReasons: { sandbox: DISABLED_REASON_SANDBOX_PROVISIONING },
       };
     case 'expired':
       return {
-        availableModes: ['general', 'grounded'],
-        defaultMode: 'grounded',
-        disabledReasons: { deep: DISABLED_REASON_DEEP_EXPIRED },
+        availableModes: ['discuss', 'docs'],
+        defaultMode: getDefaultThreadMode(true),
+        disabledReasons: { sandbox: DISABLED_REASON_SANDBOX_EXPIRED },
       };
     case 'failed':
       return {
-        availableModes: ['general', 'grounded'],
-        defaultMode: 'grounded',
-        disabledReasons: { deep: DISABLED_REASON_DEEP_FAILED },
+        availableModes: ['discuss', 'docs'],
+        defaultMode: getDefaultThreadMode(true),
+        disabledReasons: { sandbox: DISABLED_REASON_SANDBOX_FAILED },
       };
     case 'none':
       return {
-        availableModes: ['general', 'grounded'],
-        defaultMode: 'grounded',
-        disabledReasons: { deep: DISABLED_REASON_DEEP_NO_SANDBOX },
+        availableModes: ['discuss', 'docs'],
+        defaultMode: getDefaultThreadMode(true),
+        disabledReasons: { sandbox: DISABLED_REASON_SANDBOX_NO_SANDBOX },
       };
   }
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from 'react';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import {
   PlusIcon,
@@ -169,8 +169,15 @@ function RepoRow({
 
 export function ImportRepoDialog({
   onImported,
+  trigger,
 }: {
   onImported: (repoId: RepositoryId, threadId: ThreadId | null) => void;
+  /**
+   * Optional custom trigger element. Used by the EmptyState's dual-CTA layout
+   * (PRD US 9) where the "Import repository" button needs to read as a primary
+   * action rather than the compact "+" icon used in the sidebar.
+   */
+  trigger?: ReactElement;
 }) {
   const createRepositoryImport = useMutation(api.repositories.createRepositoryImport);
   const initiateGitHubInstall = useAction(api.githubAppNode.initiateGitHubInstall);
@@ -348,7 +355,7 @@ export function ImportRepoDialog({
   );
 
   // Import by URL
-  async function handleImportByUrl(event: React.FormEvent<HTMLFormElement>) {
+  async function handleImportByUrl(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setImportError(null);
     setImportStage('verifying');
@@ -390,9 +397,11 @@ export function ImportRepoDialog({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
-        <Button variant="secondary" size="icon" aria-label="Add repository" title="Add repository">
-          <PlusIcon weight="bold" />
-        </Button>
+        {trigger ?? (
+          <Button variant="secondary" size="icon" aria-label="Add repository" title="Add repository">
+            <PlusIcon weight="bold" />
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="flex h-[560px] flex-col overflow-y-hidden">
         <DialogHeader className="shrink-0">
