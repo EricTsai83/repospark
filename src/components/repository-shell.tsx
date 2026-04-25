@@ -4,6 +4,7 @@ import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
+import { AttachRepoMenu } from '@/components/attach-repo-menu';
 import { TopBar } from '@/components/top-bar';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { EmptyState } from '@/components/empty-state';
@@ -280,7 +281,21 @@ export function RepositoryShell({
         {workspaceStatus === 'no-repo' ? (
           <EmptyState />
         ) : (
-          <RepositoryTabs
+          <>
+            {effectiveSelectedThreadId !== null ? (
+              // PRD US 2 / 3: in-thread affordance to attach, swap, or detach
+              // the bound repository. Lives below the TopBar so it stays
+              // visible across chat / jobs / artifacts tabs and the user
+              // never has to leave the thread to change its grounding.
+              <div className="flex items-center gap-3 border-b border-border bg-muted/30 px-4 py-2">
+                <AttachRepoMenu
+                  threadId={effectiveSelectedThreadId}
+                  attachedRepository={capabilities.attachedRepository}
+                  availableRepositories={repositories ?? []}
+                />
+              </div>
+            ) : null}
+            <RepositoryTabs
             activeTab={activeTab}
             onActiveTabChange={setActiveTab}
             jobs={repoDetail?.jobs}
@@ -302,6 +317,7 @@ export function RepositoryShell({
             isSyncing={isSyncing}
             onSync={() => void handleSync()}
           />
+          </>
         )}
       </SidebarInset>
 

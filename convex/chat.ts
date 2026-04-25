@@ -315,6 +315,50 @@ export const createThread = mutation({
   },
 });
 
+/**
+ * Attach, swap, or detach the repository bound to a thread.
+ *
+ * Powers the in-thread `AttachRepoMenu` per PRD #19 user stories 2 and 3:
+ * users can move from abstract discussion to grounded analysis (or back) on
+ * the same thread without losing context. Passing `repositoryId: null`
+ * clears the optional `threads.repositoryId` field — Convex `patch` accepts
+ * `undefined` to drop optional fields, which is what we forward.
+ *
+ * Note that historical messages on the thread are not re-grounded — that is
+ * called out as out-of-scope in the PRD ("retroactive grounding"). New
+ * messages issued after the swap pick up the new repository's context via
+ * `getReplyContext`, but prior assistant replies stay as-is.
+ */
+export const setThreadRepository = mutation({
+  args: {
+    threadId: v.id('threads'),
+    repositoryId: v.union(v.id('repositories'), v.null()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await requireViewerIdentity(ctx);
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread || thread.ownerTokenIdentifier !== identity.tokenIdentifier) {
+      throw new Error('Thread not found.');
+    }
+
+    if (args.repositoryId !== null) {
+      const repository = await ctx.db.get(args.repositoryId);
+      if (!repository || repository.ownerTokenIdentifier !== identity.tokenIdentifier) {
+        throw new Error('Repository not found.');
+      }
+      await ctx.db.patch(args.threadId, { repositoryId: args.repositoryId });
+      return { repositoryId: args.repositoryId };
+    }
+
+    // Detach: clear the optional field. The thread's `mode` (e.g. 'deep')
+    // may now be invalid, but the resolver's `availableModes` is recomputed
+    // dynamically per-render, so the UI degrades gracefully and the next
+    // sendMessage call will use a still-available mode.
+    await ctx.db.patch(args.threadId, { repositoryId: undefined });
+    return { repositoryId: null as null };
+  },
+});
+
 export const deleteThread = mutation({
   args: {
     threadId: v.id('threads'),
