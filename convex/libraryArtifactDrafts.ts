@@ -314,6 +314,9 @@ export const applyDraft = mutation({
         status: "applied",
         appliedAt: now,
         updatedAt: now,
+        // The new version row now owns the HTML blob; leaving the reference
+        // on the applied draft would make version-history pruning unsafe.
+        ...(outputFormat === "html" ? { htmlStorageId: undefined } : {}),
       });
       return { artifactId };
     }
@@ -357,6 +360,9 @@ export const applyDraft = mutation({
       status: "applied",
       appliedAt: now,
       updatedAt: now,
+      // The new version row now owns the HTML blob; leaving the reference
+      // on the applied draft would make version-history pruning unsafe.
+      ...(outputFormat === "html" ? { htmlStorageId: undefined } : {}),
     });
     return { artifactId: target._id };
   },

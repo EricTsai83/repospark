@@ -4,7 +4,7 @@ import { describe, expect, test } from "vitest";
 import { api } from "./_generated/api";
 import { insertTestArtifact, insertTestRepository } from "../test/convex/fixtures";
 import { createRateLimitedTestConvex } from "../test/convex/harness";
-import { createArtifactVersionWrite } from "./lib/artifactWrites";
+import { createArtifactVersionWrite, updateArtifactWrite } from "./lib/artifactWrites";
 
 const OWNER = "user|artifact-versions";
 
@@ -102,5 +102,48 @@ describe("artifactVersions", () => {
     expect(versions[0]?.version).toBe(60);
     expect(versions[versions.length - 1]?.version).toBe(11);
     expect(versions[0]).not.toHaveProperty("contentMarkdown");
+  });
+
+  test("listByArtifact is unaffected by pruning — retained versions still list newest-first", async () => {
+    const t = createRateLimitedTestConvex();
+    const repositoryId = await insertTestRepository(t, { ownerTokenIdentifier: OWNER });
+    const artifactId = await insertTestArtifact(t, {
+      repositoryId,
+      ownerTokenIdentifier: OWNER,
+      version: 60,
+      title: "v60",
+    });
+
+    await t.run(async (ctx) => {
+      for (let version = 1; version <= 60; version += 1) {
+        await ctx.db.insert("artifactVersions", {
+          artifactId,
+          version,
+          ownerTokenIdentifier: OWNER,
+          repositoryId,
+          title: `Version ${version}`,
+          description: "Version description",
+          contentMarkdown: `# Version ${version}`,
+          renderFormat: "markdown",
+          createdAt: version,
+        });
+      }
+    });
+
+    // A real update bumps to version 61 and triggers a prune of versions
+    // 1..11 (threshold = 61 - 50 = 11).
+    await t.run((ctx) => updateArtifactWrite(ctx, { artifactId, title: "v61" }));
+
+    const versions = await t.withIdentity({ tokenIdentifier: OWNER }).query(api.artifactVersions.listByArtifact, {
+      artifactId,
+    });
+
+    expect(versions).toHaveLength(50);
+    expect(versions[0]?.version).toBe(61);
+    expect(versions[versions.length - 1]?.version).toBe(12);
+    expect(versions[0]).not.toHaveProperty("contentMarkdown");
+    expect(versions.map((version) => version.version)).toEqual(
+      [...versions.map((version) => version.version)].sort((a, b) => b - a),
+    );
   });
 });

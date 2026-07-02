@@ -70,10 +70,15 @@ async function seedReadyDraft(
     folderId?: Id<"artifactFolders">;
     status?: Doc<"artifactDrafts">["status"];
     updatedAt?: number;
+    outputFormat?: "markdown" | "html";
+    htmlStorageId?: Id<"_storage">;
+    htmlHash?: string;
+    htmlByteLength?: number;
   },
 ) {
   const jobId = await seedJob(t, args.repositoryId);
   const now = Date.now();
+  const outputFormat = args.outputFormat ?? "markdown";
   const draftId = await t.run(async (ctx) =>
     ctx.db.insert("artifactDrafts", {
       ownerTokenIdentifier: OWNER,
@@ -89,6 +94,10 @@ async function seedReadyDraft(
       description: "Updated description",
       contentMarkdown: "# Updated\n\nCodebase-backed content.",
       changeSummary: "Refreshed from the codebase.",
+      outputFormat,
+      htmlStorageId: outputFormat === "html" ? args.htmlStorageId : undefined,
+      htmlHash: outputFormat === "html" ? args.htmlHash : undefined,
+      htmlByteLength: outputFormat === "html" ? args.htmlByteLength : undefined,
       alignedImportCommitSha: "abc123",
       generatedByProvider: "openai",
       generatedByModel: "gpt-5.5",
@@ -251,6 +260,52 @@ describe("libraryArtifactDrafts", () => {
       expect(state.artifact?.generatedByModel).toBe("gpt-5.5");
       expect(state.version?.contentMarkdown).toContain("Codebase-backed content");
       expect(state.draft?.status).toBe("applied");
+    });
+  });
+
+  test("apply create transfers HTML blob ownership from draft to version", async () => {
+    await withPausedConvexScheduler(async () => {
+      const t = createRateLimitedTestConvex();
+      await seedAccessProfile(t);
+      const repositoryId = await seedRepository(t);
+      const htmlStorageId = await t.run((ctx) =>
+        ctx.storage.store(new Blob(["<html>draft</html>"], { type: "text/html" })),
+      );
+      const { draftId } = await seedReadyDraft(t, {
+        repositoryId,
+        operation: "create",
+        outputFormat: "html",
+        htmlStorageId,
+        htmlHash: "draft-hash",
+        htmlByteLength: 19,
+      });
+      const viewer = t.withIdentity({ tokenIdentifier: OWNER });
+
+      const result = await viewer.mutation(api.libraryArtifactDrafts.applyDraft, { draftId });
+
+      const state = await t.run(async (ctx) => ({
+        version: await ctx.db
+          .query("artifactVersions")
+          .withIndex("by_artifactId_and_version", (q) => q.eq("artifactId", result.artifactId).eq("version", 1))
+          .unique(),
+        draft: await ctx.db.get(draftId),
+        blob: await ctx.db.system.get(htmlStorageId),
+      }));
+      // The version row now owns the blob...
+      expect(state.version?.htmlStorageId).toBe(htmlStorageId);
+      // ...and the applied draft no longer carries the reference.
+      expect(state.draft?.status).toBe("applied");
+      expect(state.draft?.htmlStorageId).toBeUndefined();
+      expect(state.blob).not.toBeNull();
+
+      // The draft's pre-apply preview degrades gracefully (not a crash) once
+      // applied, while the artifact's own version preview still resolves.
+      const draftPreview = await viewer.query(api.artifactHtml.getDraftPreviewUrl, { draftId });
+      expect(draftPreview).toBeNull();
+      const artifactPreview = await viewer.query(api.artifactHtml.getPreviewUrl, {
+        artifactId: result.artifactId,
+      });
+      expect(artifactPreview?.url).toBeTruthy();
     });
   });
 

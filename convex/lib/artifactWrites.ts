@@ -4,6 +4,20 @@ import type { MutationCtx } from "../_generated/server";
 import type { LlmProvider } from "./llmProvider";
 import { assertOwnedBy } from "./ownedDocs";
 
+/**
+ * Retention cap for artifactVersions rows per artifact. Must stay >= the
+ * UI read cap (`ARTIFACT_VERSION_LIST_LIMIT = 50` in
+ * convex/artifactVersions.ts) so nothing listable is ever pruned.
+ */
+export const MAX_ARTIFACT_VERSIONS = 50;
+
+/**
+ * Per-call bound on prune work so a large legacy backlog drains across
+ * successive updates instead of one unbounded transaction. Steady state
+ * deletes exactly one stale row per update.
+ */
+export const MAX_PRUNE_DELETES_PER_UPDATE = 200;
+
 type ArtifactKind = Doc<"artifacts">["kind"];
 type ChunkingFailureReason = NonNullable<Doc<"artifacts">["chunkingFailureReason"]>;
 type ChunkingStatus = NonNullable<Doc<"artifacts">["chunkingStatus"]>;
@@ -242,6 +256,9 @@ export async function updateArtifactWrite(
     }
     patch.updatedAt = Date.now();
     await ctx.db.patch(args.artifactId, patch);
+    if (patch.version !== undefined) {
+      await pruneArtifactVersions(ctx, args.artifactId, patch.version);
+    }
     await scheduleArtifactReindex(ctx, {
       artifactId: args.artifactId,
       repositoryId: args.contentMarkdown !== undefined ? artifact.repositoryId : undefined,
@@ -295,6 +312,73 @@ export async function createArtifactVersionWrite(
     createdAt: args.createdAt,
     jobId: args.jobId,
   });
+}
+
+/**
+ * Prune `artifactVersions` rows beyond the retention cap
+ * (`MAX_ARTIFACT_VERSIONS`) for a single artifact, deleting each stale row's
+ * HTML storage blob unless a retained version still references it (blobs
+ * are shared across versions when HTML content is unchanged between
+ * updates). Bounded by `MAX_PRUNE_DELETES_PER_UPDATE` per call so a large
+ * legacy backlog drains incrementally across successive updates instead of
+ * one unbounded transaction. Returns the number of delete operations
+ * performed (mirrors the `deleteArtifactWrite` convention).
+ */
+async function pruneArtifactVersions(
+  ctx: MutationCtx,
+  artifactId: Id<"artifacts">,
+  latestVersion: number,
+): Promise<number> {
+  const PAGE_SIZE = 100;
+  const threshold = latestVersion - MAX_ARTIFACT_VERSIONS;
+  if (threshold < 1) {
+    return 0;
+  }
+
+  const retainedVersions = await ctx.db
+    .query("artifactVersions")
+    .withIndex("by_artifactId_and_version", (q) => q.eq("artifactId", artifactId).gt("version", threshold))
+    .take(MAX_ARTIFACT_VERSIONS + 1);
+  const retainedStorageIds = new Set<Id<"_storage">>();
+  for (const version of retainedVersions) {
+    if (version.htmlStorageId) {
+      retainedStorageIds.add(version.htmlStorageId);
+    }
+  }
+
+  const deletedStorageIds = new Set<Id<"_storage">>();
+  let deletedCount = 0;
+  let hasMoreStale = true;
+  while (hasMoreStale && deletedCount < MAX_PRUNE_DELETES_PER_UPDATE) {
+    const staleVersions = await ctx.db
+      .query("artifactVersions")
+      .withIndex("by_artifactId_and_version", (q) => q.eq("artifactId", artifactId).lte("version", threshold))
+      .take(PAGE_SIZE);
+    if (staleVersions.length === 0) {
+      break;
+    }
+    for (const version of staleVersions) {
+      if (deletedCount >= MAX_PRUNE_DELETES_PER_UPDATE) {
+        break;
+      }
+      if (
+        version.htmlStorageId &&
+        !retainedStorageIds.has(version.htmlStorageId) &&
+        !deletedStorageIds.has(version.htmlStorageId)
+      ) {
+        await ctx.storage.delete(version.htmlStorageId);
+        deletedStorageIds.add(version.htmlStorageId);
+        deletedCount += 1;
+      }
+      if (deletedCount >= MAX_PRUNE_DELETES_PER_UPDATE) {
+        break;
+      }
+      await ctx.db.delete(version._id);
+      deletedCount += 1;
+    }
+    hasMoreStale = staleVersions.length === PAGE_SIZE;
+  }
+  return deletedCount;
 }
 
 export async function replaceArtifactInFolderWrite(

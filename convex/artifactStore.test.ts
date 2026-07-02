@@ -9,7 +9,12 @@ import {
   insertTestRepository,
   insertTestThread,
 } from "../test/convex/fixtures";
-import { replaceArtifactInFolderWrite } from "./lib/artifactWrites";
+import {
+  MAX_ARTIFACT_VERSIONS,
+  MAX_PRUNE_DELETES_PER_UPDATE,
+  replaceArtifactInFolderWrite,
+  updateArtifactWrite,
+} from "./lib/artifactWrites";
 import { createTestConvex, type SystifyTestConvex } from "../test/convex/harness";
 import { withPausedConvexScheduler } from "../test/convex/scheduler";
 
@@ -600,6 +605,203 @@ describe("ArtifactStore — update/delete", () => {
     const stored = await t.query(internal.artifactStore.getArtifact, { artifactId });
     expect(stored).toBeNull();
   });
+});
+
+describe("ArtifactStore — version history pruning", () => {
+  test("an update past the retention cap prunes stale rows and keeps the newest 50", async () => {
+    const t = createTestConvex();
+    const repositoryId = await seedRepository(t);
+    const artifactId = await seedArtifact(t, { repositoryId, title: "v1" });
+
+    // Seed versions 2..60 directly (avoids 59 mutation round-trips), landing
+    // the artifact at version 60 before the real update under test.
+    await t.run(async (ctx) => {
+      for (let version = 2; version <= 60; version += 1) {
+        await ctx.db.insert("artifactVersions", {
+          artifactId,
+          version,
+          ownerTokenIdentifier: OWNER,
+          repositoryId,
+          title: `Version ${version}`,
+          description: "d",
+          contentMarkdown: `# Version ${version}`,
+          renderFormat: "markdown",
+          createdAt: version,
+        });
+      }
+      await ctx.db.patch(artifactId, { version: 60 });
+    });
+
+    // The real update bumps to version 61, whose threshold (11) prunes
+    // versions 1..10.
+    const result = await t.run((ctx) => updateArtifactWrite(ctx, { artifactId, title: "v61" }));
+    expect(result.updated).toBe(true);
+
+    const state = await t.run(async (ctx) => ({
+      artifact: await ctx.db.get(artifactId),
+      versions: await ctx.db
+        .query("artifactVersions")
+        .withIndex("by_artifactId", (q) => q.eq("artifactId", artifactId))
+        .collect(),
+    }));
+
+    expect(state.versions).toHaveLength(MAX_ARTIFACT_VERSIONS);
+    const versionNumbers = state.versions.map((version) => version.version).sort((a, b) => a - b);
+    expect(versionNumbers[0]).toBe(61 - MAX_ARTIFACT_VERSIONS + 1);
+    expect(versionNumbers[versionNumbers.length - 1]).toBe(61);
+    expect(state.artifact?.version).toBe(61);
+    expect(state.artifact?.currentVersionId).toBeTruthy();
+    const currentVersion = await t.run((ctx) => ctx.db.get(state.artifact!.currentVersionId!));
+    expect(currentVersion?.version).toBe(61);
+  });
+
+  test("a blob shared between a stale and a retained version survives prune until unreferenced", async () => {
+    const t = createTestConvex();
+    const repositoryId = await seedRepository(t);
+    const artifactId = await seedArtifact(t, { repositoryId, title: "v1", contentMarkdown: "# v1" });
+
+    const sharedStorageId = await t.run((ctx) =>
+      ctx.storage.store(new Blob(["<html>shared</html>"], { type: "text/html" })),
+    );
+
+    // Seed versions 2..60. Version 10 (stale after the first update) and
+    // version 55 (retained) share one HTML blob; every other version gets
+    // its own distinct storage id so the shared blob is unambiguous.
+    await t.run(async (ctx) => {
+      for (let version = 2; version <= 60; version += 1) {
+        const isSharer = version === 10 || version === 55;
+        const htmlStorageId = isSharer
+          ? sharedStorageId
+          : await ctx.storage.store(new Blob([`<html>${version}</html>`], { type: "text/html" }));
+        await ctx.db.insert("artifactVersions", {
+          artifactId,
+          version,
+          ownerTokenIdentifier: OWNER,
+          repositoryId,
+          title: `Version ${version}`,
+          description: "d",
+          contentMarkdown: `# Version ${version}`,
+          renderFormat: "html",
+          htmlStorageId,
+          htmlHash: `hash-${version}`,
+          htmlByteLength: 10,
+          htmlValidationStatus: "valid",
+          createdAt: version,
+        });
+      }
+      await ctx.db.patch(artifactId, { version: 60, renderFormat: "html" });
+    });
+
+    // Update to version 61 with a distinct new blob (so the shared blob
+    // isn't re-adopted by every future version via html-field carry-forward):
+    // threshold 11 prunes versions 1..10, including the stale sharer at
+    // version 10. Version 55 (retained) still references the shared blob,
+    // so it must survive.
+    const version61StorageId = await t.run((ctx) =>
+      ctx.storage.store(new Blob(["<html>61</html>"], { type: "text/html" })),
+    );
+    await t.run((ctx) =>
+      updateArtifactWrite(ctx, { artifactId, title: "v61", htmlStorageId: version61StorageId, htmlHash: "hash-61" }),
+    );
+
+    const afterFirstPrune = await t.run(async (ctx) => ({
+      version10: await ctx.db
+        .query("artifactVersions")
+        .withIndex("by_artifactId_and_version", (q) => q.eq("artifactId", artifactId).eq("version", 10))
+        .unique(),
+      blob: await ctx.db.system.get(sharedStorageId),
+    }));
+    expect(afterFirstPrune.version10).toBeNull();
+    expect(afterFirstPrune.blob).not.toBeNull();
+
+    // Drive further updates until version 55 itself falls below the
+    // retention threshold and is pruned; only then must the blob go.
+    let currentVersion = 61;
+    while (currentVersion - MAX_ARTIFACT_VERSIONS < 55) {
+      currentVersion += 1;
+      await t.run((ctx) => updateArtifactWrite(ctx, { artifactId, title: `v${currentVersion}` }));
+    }
+
+    const afterFinalPrune = await t.run(async (ctx) => ({
+      version55: await ctx.db
+        .query("artifactVersions")
+        .withIndex("by_artifactId_and_version", (q) => q.eq("artifactId", artifactId).eq("version", 55))
+        .unique(),
+      blob: await ctx.db.system.get(sharedStorageId),
+    }));
+    expect(afterFinalPrune.version55).toBeNull();
+    expect(afterFinalPrune.blob).toBeNull();
+  });
+
+  // Heavy by design: seeds a backlog well beyond MAX_PRUNE_DELETES_PER_UPDATE
+  // stale rows to exercise the per-call deletion bound across two updates.
+  test("a large legacy backlog drains across multiple updates instead of one pass", async () => {
+    const t = createTestConvex();
+    const repositoryId = await seedRepository(t);
+    const artifactId = await seedArtifact(t, { repositoryId, title: "v1" });
+
+    // Backlog large enough that stale-row count alone exceeds the per-call
+    // bound: MAX_PRUNE_DELETES_PER_UPDATE stale rows below the threshold,
+    // plus the retained window, plus headroom above. `seedArtifact` (via
+    // `insertTestArtifact`) only writes the `artifacts` row, not a matching
+    // version-1 row in `artifactVersions`, so rows 2..latestSeededVersion
+    // are seeded directly here to stand in for the full history.
+    const backlogSize = MAX_PRUNE_DELETES_PER_UPDATE + 50;
+    const latestSeededVersion = backlogSize + MAX_ARTIFACT_VERSIONS;
+    await t.run(async (ctx) => {
+      for (let version = 2; version <= latestSeededVersion; version += 1) {
+        await ctx.db.insert("artifactVersions", {
+          artifactId,
+          version,
+          ownerTokenIdentifier: OWNER,
+          repositoryId,
+          title: `Version ${version}`,
+          description: "d",
+          contentMarkdown: `# Version ${version}`,
+          renderFormat: "markdown",
+          createdAt: version,
+        });
+      }
+      await ctx.db.patch(artifactId, { version: latestSeededVersion });
+    });
+
+    const seededRowCount = await t.run(
+      async (ctx) =>
+        (
+          await ctx.db
+            .query("artifactVersions")
+            .withIndex("by_artifactId", (q) => q.eq("artifactId", artifactId))
+            .collect()
+        ).length,
+    );
+
+    await t.run((ctx) => updateArtifactWrite(ctx, { artifactId, title: "next" }));
+
+    const afterFirstUpdate = await t.run(
+      async (ctx) =>
+        await ctx.db
+          .query("artifactVersions")
+          .withIndex("by_artifactId", (q) => q.eq("artifactId", artifactId))
+          .collect(),
+    );
+    // The update inserts one new version row, then a single prune call may
+    // delete at most MAX_PRUNE_DELETES_PER_UPDATE stale rows.
+    const totalBeforePrune = seededRowCount + 1;
+    expect(afterFirstUpdate.length).toBe(totalBeforePrune - MAX_PRUNE_DELETES_PER_UPDATE);
+    // Backlog remains above the retention window, so the drain isn't done yet.
+    expect(afterFirstUpdate.length).toBeGreaterThan(MAX_ARTIFACT_VERSIONS);
+
+    // A second update continues draining the remaining backlog.
+    await t.run((ctx) => updateArtifactWrite(ctx, { artifactId, title: "next-2" }));
+    const afterSecondUpdate = await t.run(
+      async (ctx) =>
+        await ctx.db
+          .query("artifactVersions")
+          .withIndex("by_artifactId", (q) => q.eq("artifactId", artifactId))
+          .collect(),
+    );
+    expect(afterSecondUpdate.length).toBeLessThan(afterFirstUpdate.length);
+  }, 30_000);
 });
 
 describe("ArtifactWrites — generated replacement", () => {
