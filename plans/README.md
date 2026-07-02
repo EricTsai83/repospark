@@ -29,6 +29,7 @@ assert meaningful behavior (exact-count regression, budget early-stop with
 zero-orphan convergence, fence overflow degradation, constant-time semantics).
 
 | 005  | Give the heavy cascade-budget test an explicit 30s timeout (follow-up to 001: the test's ~11K-row fixture is load-bearing but intermittently exceeds vitest's 5s default in full-suite/cold-cache runs — flaked 3× today) | P1 | S | 001 | DONE (reviewed & approved 2026-07-02; merged fast-forward as `d1595da`) |
+| 006  | Prune artifact version history to a retention cap (also fixes draft→version blob-ownership transfer at apply time — investigation found applied drafts keep referencing the version's HTML blob) | P2 | M | — | TODO |
 
 ## Merge record (2026-07-02)
 
