@@ -321,8 +321,10 @@ export async function createArtifactVersionWrite(
  * are shared across versions when HTML content is unchanged between
  * updates). Bounded by `MAX_PRUNE_DELETES_PER_UPDATE` per call so a large
  * legacy backlog drains incrementally across successive updates instead of
- * one unbounded transaction. Returns the number of delete operations
- * performed (mirrors the `deleteArtifactWrite` convention).
+ * one unbounded transaction; the per-call bound never splits a blob-delete
+ * from its row-delete, so a call always commits with storage and rows left
+ * in a consistent state. Returns the number of delete operations performed
+ * (mirrors the `deleteArtifactWrite` convention).
  */
 async function pruneArtifactVersions(
   ctx: MutationCtx,
@@ -358,20 +360,24 @@ async function pruneArtifactVersions(
       break;
     }
     for (const version of staleVersions) {
-      if (deletedCount >= MAX_PRUNE_DELETES_PER_UPDATE) {
-        break;
+      // Never split a blob-delete from its row-delete across calls: only
+      // start a row if the full (blob + row) unit fits in the remaining
+      // budget, even when this particular row turns out not to need a
+      // blob delete (shared/retained/already-deleted blob).
+      if (deletedCount + 2 > MAX_PRUNE_DELETES_PER_UPDATE) {
+        return deletedCount;
       }
       if (
         version.htmlStorageId &&
         !retainedStorageIds.has(version.htmlStorageId) &&
         !deletedStorageIds.has(version.htmlStorageId)
       ) {
-        await ctx.storage.delete(version.htmlStorageId);
+        const blob = await ctx.db.system.get(version.htmlStorageId);
+        if (blob) {
+          await ctx.storage.delete(version.htmlStorageId);
+          deletedCount += 1;
+        }
         deletedStorageIds.add(version.htmlStorageId);
-        deletedCount += 1;
-      }
-      if (deletedCount >= MAX_PRUNE_DELETES_PER_UPDATE) {
-        break;
       }
       await ctx.db.delete(version._id);
       deletedCount += 1;

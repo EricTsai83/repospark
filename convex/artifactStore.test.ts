@@ -784,10 +784,14 @@ describe("ArtifactStore — version history pruning", () => {
           .withIndex("by_artifactId", (q) => q.eq("artifactId", artifactId))
           .collect(),
     );
-    // The update inserts one new version row, then a single prune call may
-    // delete at most MAX_PRUNE_DELETES_PER_UPDATE stale rows.
+    // The update inserts one new version row, then a single prune call
+    // drains stale rows up to the per-call bound. Each row reserves budget
+    // for a (blob-delete + row-delete) pair even when it turns out not to
+    // need a blob delete, so the bound never splits a pair across calls;
+    // for these blob-less markdown rows that means one unit of slack per
+    // call, leaving `MAX_PRUNE_DELETES_PER_UPDATE - 1` rows deleted.
     const totalBeforePrune = seededRowCount + 1;
-    expect(afterFirstUpdate.length).toBe(totalBeforePrune - MAX_PRUNE_DELETES_PER_UPDATE);
+    expect(afterFirstUpdate.length).toBe(totalBeforePrune - (MAX_PRUNE_DELETES_PER_UPDATE - 1));
     // Backlog remains above the retention window, so the drain isn't done yet.
     expect(afterFirstUpdate.length).toBeGreaterThan(MAX_ARTIFACT_VERSIONS);
 
@@ -801,6 +805,107 @@ describe("ArtifactStore — version history pruning", () => {
           .collect(),
     );
     expect(afterSecondUpdate.length).toBeLessThan(afterFirstUpdate.length);
+  }, 30_000);
+
+  // Heavy by design: seeds a backlog sized so the per-call deletion bound
+  // lands exactly between two stale rows that share one HTML blob, forcing
+  // the shared-blob pair to straddle the call boundary deterministically.
+  test("a shared blob straddling the per-call bound survives two updates without throwing", async () => {
+    const t = createTestConvex();
+    const repositoryId = await seedRepository(t);
+    const artifactId = await seedArtifact(t, { repositoryId, title: "v1", contentMarkdown: "# v1" });
+
+    const sharedStorageId = await t.run((ctx) =>
+      ctx.storage.store(new Blob(["<html>shared</html>"], { type: "text/html" })),
+    );
+
+    // Seed MAX_PRUNE_DELETES_PER_UPDATE simple (blob-less) stale rows first,
+    // then two stale rows at the END of the stale range that share one HTML
+    // blob. Each row the prune loop visits reserves budget for a full
+    // (blob-delete + row-delete) pair before starting it (even a blob-less
+    // row reserves 2), so the first call's budget is exhausted by the
+    // simple rows alone, one row short of the full page: it lands right
+    // before touching either shared-blob row, leaving them intact together
+    // for the second call to process as one unit.
+    const simpleStaleCount = MAX_PRUNE_DELETES_PER_UPDATE;
+    const sharedVersionA = simpleStaleCount + 1;
+    const sharedVersionB = simpleStaleCount + 2;
+    const latestSeededVersion = sharedVersionB + MAX_ARTIFACT_VERSIONS;
+    await t.run(async (ctx) => {
+      for (let version = 2; version <= latestSeededVersion; version += 1) {
+        const isSharer = version === sharedVersionA || version === sharedVersionB;
+        if (isSharer) {
+          await ctx.db.insert("artifactVersions", {
+            artifactId,
+            version,
+            ownerTokenIdentifier: OWNER,
+            repositoryId,
+            title: `Version ${version}`,
+            description: "d",
+            contentMarkdown: `# Version ${version}`,
+            renderFormat: "html",
+            htmlStorageId: sharedStorageId,
+            htmlHash: "hash-shared",
+            htmlByteLength: 10,
+            htmlValidationStatus: "valid",
+            createdAt: version,
+          });
+        } else {
+          await ctx.db.insert("artifactVersions", {
+            artifactId,
+            version,
+            ownerTokenIdentifier: OWNER,
+            repositoryId,
+            title: `Version ${version}`,
+            description: "d",
+            contentMarkdown: `# Version ${version}`,
+            renderFormat: "markdown",
+            createdAt: version,
+          });
+        }
+      }
+      await ctx.db.patch(artifactId, { version: latestSeededVersion });
+    });
+
+    // First real update: threshold = (latestSeededVersion + 1) -
+    // MAX_ARTIFACT_VERSIONS = sharedVersionB + 1, so both sharer rows
+    // (sharedVersionA, sharedVersionB) are stale and within the backlog.
+    await t.run((ctx) => updateArtifactWrite(ctx, { artifactId, title: "next" }));
+
+    // Second real update must not throw even though the first call may have
+    // left the shared-blob pair (or part of the backlog before it) for this
+    // call to finish.
+    await expect(t.run((ctx) => updateArtifactWrite(ctx, { artifactId, title: "next-2" }))).resolves.not.toThrow();
+
+    // Keep draining until the entire seeded backlog (including the shared
+    // pair) is gone, driving further real updates as needed.
+    for (let i = 0; i < 5; i += 1) {
+      const remainingStale = await t.run(
+        async (ctx) =>
+          (
+            await ctx.db
+              .query("artifactVersions")
+              .withIndex("by_artifactId_and_version", (q) =>
+                q.eq("artifactId", artifactId).lte("version", sharedVersionB),
+              )
+              .collect()
+          ).length,
+      );
+      if (remainingStale === 0) {
+        break;
+      }
+      await t.run((ctx) => updateArtifactWrite(ctx, { artifactId, title: `drain-${i}` }));
+    }
+
+    const finalState = await t.run(async (ctx) => ({
+      staleRows: await ctx.db
+        .query("artifactVersions")
+        .withIndex("by_artifactId_and_version", (q) => q.eq("artifactId", artifactId).lte("version", sharedVersionB))
+        .collect(),
+      blob: await ctx.db.system.get(sharedStorageId),
+    }));
+    expect(finalState.staleRows).toHaveLength(0);
+    expect(finalState.blob).toBeNull();
   }, 30_000);
 });
 
