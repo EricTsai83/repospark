@@ -1,6 +1,7 @@
 import { httpRouter } from "convex/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
+import { constantTimeEqual } from "./lib/constantTimeEqual";
 import {
   DaytonaWebhookBodyReadError,
   prepareDaytonaWebhookVerification,
@@ -23,15 +24,6 @@ class GitHubWebhookBodyReadError extends Error {
     super(message);
     this.name = "GitHubWebhookBodyReadError";
   }
-}
-
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return result === 0;
 }
 
 function buildRedirectUrl(baseUrl: string, params: Record<string, string>): string {
