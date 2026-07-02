@@ -940,6 +940,8 @@ describe("repository deletion cleanup", () => {
     expect(remaining.storage).toBeNull();
   });
 
+  // Heavy by design: the fixture must exceed the production write allowance
+  // (~11K row ops), so it gets an explicit timeout instead of the 5s default.
   test("drainArtifactsByRepositoryId stops within its write allowance and later passes finish the rest", async () => {
     const ownerTokenIdentifier = "user|cascade-artifact-budget";
     const t = makeHarness();
@@ -1062,5 +1064,5 @@ describe("repository deletion cleanup", () => {
     expect(orphanCheck.chunks).toHaveLength(0);
     expect(orphanCheck.views).toHaveLength(0);
     expect(orphanCheck.versions).toHaveLength(0);
-  });
+  }, 30_000);
 });
