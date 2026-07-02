@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
+import { ARTIFACT_VIEW_STATE_LIMIT } from "./artifactViews";
 import type { Id } from "./_generated/dataModel";
 import { insertTestArtifact, insertTestRepository, insertTestThread } from "../test/convex/fixtures";
 import { createTestConvex, type SystifyTestConvex } from "../test/convex/harness";
@@ -260,6 +261,65 @@ describe("artifactViews.listViewStateByRepository", () => {
     const viewer = t.withIdentity({ tokenIdentifier: OWNER });
     const state = await viewer.query(api.artifactViews.listViewStateByRepository, { repositoryId });
     expect(state).toEqual({ bootstrap: Number.POSITIVE_INFINITY, views: {}, bootstrapPending: false });
+  });
+
+  test("stays below the fence: returns all view records untruncated", async () => {
+    const t = makeHarness();
+    const repositoryId = await seedRepository(t);
+    const artifactId = await seedRepoArtifact(t, { repositoryId });
+
+    const viewer = t.withIdentity({ tokenIdentifier: OWNER });
+    await viewer.mutation(api.artifactViews.ensureRepositoryBootstrap, { repositoryId });
+
+    // A handful of rows, well under the fence — pins the unchanged
+    // "below the limit" behavior after switching .collect() to .take().
+    const rowCount = 5;
+    await t.run(async (ctx) => {
+      for (let i = 0; i < rowCount; i += 1) {
+        await ctx.db.insert("artifactViews", {
+          ownerTokenIdentifier: OWNER,
+          repositoryId,
+          artifactId,
+          viewedAt: Date.now() + i,
+        });
+      }
+    });
+
+    const state = await viewer.query(api.artifactViews.listViewStateByRepository, { repositoryId });
+    expect(state.bootstrapPending).toBe(false);
+    // All rows target the same artifactId (row count is what this test
+    // pins, not map shape), so the sparse map collapses to one entry.
+    expect(state.views[artifactId]).toBeTypeOf("number");
+  });
+
+  test("above the fence: degrades to bootstrapPending=true with empty views", async () => {
+    const t = makeHarness();
+    const repositoryId = await seedRepository(t);
+    const artifactId = await seedRepoArtifact(t, { repositoryId });
+
+    const viewer = t.withIdentity({ tokenIdentifier: OWNER });
+    await viewer.mutation(api.artifactViews.ensureRepositoryBootstrap, { repositoryId });
+
+    // Seed one more row than the fence allows. Rows are inserted directly
+    // rather than through `markViewed` (which would require a distinct,
+    // real artifact per row) since the query under test only reads the
+    // `artifactViews` table and never re-validates artifact existence.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < ARTIFACT_VIEW_STATE_LIMIT + 1; i += 1) {
+        await ctx.db.insert("artifactViews", {
+          ownerTokenIdentifier: OWNER,
+          repositoryId,
+          artifactId,
+          viewedAt: Date.now() + i,
+        });
+      }
+    });
+
+    const state = await viewer.query(api.artifactViews.listViewStateByRepository, { repositoryId });
+    expect(state.views).toEqual({});
+    expect(state.bootstrapPending).toBe(true);
+    const repository = await t.run((ctx) => ctx.db.get(repositoryId));
+    expect(state.bootstrap).toBe(repository!._creationTime);
   });
 });
 

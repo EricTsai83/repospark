@@ -95,6 +95,14 @@ export const ensureRepositoryBootstrap = mutation({
 });
 
 /**
+ * Fence for the per-(viewer, repo) view-state read. Far above any
+ * realistic artifact count per repository; if the fence is hit the
+ * query degrades to `bootstrapPending: true` so the navigator
+ * suppresses dots instead of rendering from truncated data.
+ */
+export const ARTIFACT_VIEW_STATE_LIMIT = 1_000;
+
+/**
  * Per-repository view state for the signed-in viewer.
  *
  * Returns:
@@ -115,6 +123,12 @@ export const ensureRepositoryBootstrap = mutation({
  * happens — `bootstrap: Number.POSITIVE_INFINITY` paired with empty
  * `views` keeps the navigator from lighting up dots for repos the
  * viewer can't access.
+ *
+ * The `artifactViews` read is fenced at `ARTIFACT_VIEW_STATE_LIMIT` rows.
+ * If a viewer has more view records than that for a single repository,
+ * the result is not trustworthy (it would be truncated), so the query
+ * degrades to the same "suppress dots" mode as an unwritten bootstrap:
+ * empty `views` and `bootstrapPending: true`.
  */
 export const listViewStateByRepository = query({
   args: { repositoryId: v.id("repositories") },
@@ -136,7 +150,11 @@ export const listViewStateByRepository = query({
       .withIndex("by_ownerTokenIdentifier_and_repositoryId", (q) =>
         q.eq("ownerTokenIdentifier", identity.tokenIdentifier).eq("repositoryId", args.repositoryId),
       )
-      .collect();
+      .take(ARTIFACT_VIEW_STATE_LIMIT + 1);
+
+    if (records.length > ARTIFACT_VIEW_STATE_LIMIT) {
+      return { bootstrap: repository._creationTime, views: {} as Record<string, number>, bootstrapPending: true };
+    }
 
     const views: Record<string, number> = {};
     for (const record of records) {
