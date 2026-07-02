@@ -29,7 +29,7 @@ assert meaningful behavior (exact-count regression, budget early-stop with
 zero-orphan convergence, fence overflow degradation, constant-time semantics).
 
 | 005  | Give the heavy cascade-budget test an explicit 30s timeout (follow-up to 001: the test's ~11K-row fixture is load-bearing but intermittently exceeds vitest's 5s default in full-suite/cold-cache runs — flaked 3× today) | P1 | S | 001 | DONE (reviewed & approved 2026-07-02; merged fast-forward as `d1595da`) |
-| 006  | Prune artifact version history to a retention cap (also fixes draft→version blob-ownership transfer at apply time — investigation found applied drafts keep referencing the version's HTML blob) | P2 | M | — | TODO |
+| 006  | Prune artifact version history to a retention cap (also fixes draft→version blob-ownership transfer at apply time — investigation found applied drafts keep referencing the version's HTML blob) | P2 | M | — | DONE (reviewed & approved 2026-07-02 after one REVISE round; merged fast-forward as `70d1863` + `94eeaaf`. Review caught a cross-call double-storage-delete hazard when the per-call bound split a blob-delete from its row-delete or from a second row sharing the blob — fixed with a transactional existence check via `ctx.db.system.get` plus pair-atomic budget reservation, with a regression test that reproduces the original failure (`Delete on non-existent doc`) when the fix is reverted. Known tradeoff: blob-less prune throughput is 199 rows/call instead of 200 due to conservative pair reservation) |
 
 ## Merge record (2026-07-02)
 
