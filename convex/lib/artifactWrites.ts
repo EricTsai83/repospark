@@ -334,8 +334,17 @@ export async function replaceArtifactFolder(
   await ctx.db.patch(artifact._id, { folderId });
 }
 
-export async function deleteArtifactWrite(ctx: MutationCtx, artifactId: Id<"artifacts">): Promise<void> {
+/**
+ * Fully drain an artifact's chunks, views, versions, and HTML storage blobs,
+ * then delete the artifact row itself. Returns the total number of
+ * `ctx.db.delete` / storage-delete operations performed so callers can
+ * budget across multiple artifacts without overflowing a single mutation's
+ * read/write limits (mirrors the convention in
+ * `deleteMessageStreamState` in `convex/chat/streamStore.ts`).
+ */
+export async function deleteArtifactWrite(ctx: MutationCtx, artifactId: Id<"artifacts">): Promise<number> {
   const PAGE_SIZE = 100;
+  let deletedCount = 0;
   let hasMoreChunks = true;
   while (hasMoreChunks) {
     const chunks = await ctx.db
@@ -344,6 +353,7 @@ export async function deleteArtifactWrite(ctx: MutationCtx, artifactId: Id<"arti
       .take(PAGE_SIZE);
     for (const chunk of chunks) {
       await ctx.db.delete(chunk._id);
+      deletedCount += 1;
     }
     hasMoreChunks = chunks.length === PAGE_SIZE;
   }
@@ -355,19 +365,23 @@ export async function deleteArtifactWrite(ctx: MutationCtx, artifactId: Id<"arti
       .take(PAGE_SIZE);
     for (const view of views) {
       await ctx.db.delete(view._id);
+      deletedCount += 1;
     }
     hasMoreViews = views.length === PAGE_SIZE;
   }
-  await deleteArtifactVersionsAndHtmlStorage(ctx, artifactId, PAGE_SIZE);
+  deletedCount += await deleteArtifactVersionsAndHtmlStorage(ctx, artifactId, PAGE_SIZE);
   await ctx.db.delete(artifactId);
+  deletedCount += 1;
+  return deletedCount;
 }
 
 async function deleteArtifactVersionsAndHtmlStorage(
   ctx: MutationCtx,
   artifactId: Id<"artifacts">,
   pageSize: number,
-): Promise<void> {
+): Promise<number> {
   const deletedStorageIds = new Set<Id<"_storage">>();
+  let deletedCount = 0;
   let hasMoreVersions = true;
   while (hasMoreVersions) {
     const versions = await ctx.db
@@ -378,11 +392,14 @@ async function deleteArtifactVersionsAndHtmlStorage(
       if (version.htmlStorageId && !deletedStorageIds.has(version.htmlStorageId)) {
         await ctx.storage.delete(version.htmlStorageId);
         deletedStorageIds.add(version.htmlStorageId);
+        deletedCount += 1;
       }
       await ctx.db.delete(version._id);
+      deletedCount += 1;
     }
     hasMoreVersions = versions.length === pageSize;
   }
+  return deletedCount;
 }
 
 export async function markArtifactChunkingStatusWrite(

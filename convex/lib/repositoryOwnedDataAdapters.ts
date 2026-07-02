@@ -3,6 +3,7 @@ import type { MutationCtx } from "../_generated/server";
 import { drainArchivedThreadScopesByRepositoryId } from "../chat/archiveState";
 import { drainHistoryGroupsByRepositoryId, drainThreadSharesByRepositoryId } from "../chat/historyState";
 import { CASCADE_BATCH_SIZE, MAX_TOOL_CALL_EVENTS_PER_MESSAGE } from "./constants";
+import { MAX_ARTIFACT_CHUNKS_PER_ARTIFACT } from "./artifactChunking";
 import { deleteArtifactWrite } from "./artifactWrites";
 import { clearLastActiveRepositoryIfMatches } from "./userPreferences";
 
@@ -77,12 +78,43 @@ async function drainToolCallEventsByMessageId(
   return false;
 }
 
+/**
+ * Per-artifact deletion fans out into up to `MAX_ARTIFACT_CHUNKS_PER_ARTIFACT`
+ * chunk deletes plus views, versions, and HTML storage blobs for that single
+ * artifact. Unlike the other drains in this file (whose per-item deletion is
+ * a single `ctx.db.delete`), a page of `CASCADE_BATCH_SIZE` artifacts could
+ * therefore fan out into tens of thousands of writes in one mutation. This
+ * worst-case-per-artifact allowance keeps a single pass of this drain within
+ * a conservative share of the write budget (`ARTIFACT_DRAIN_WRITE_ALLOWANCE`,
+ * well under `CASCADE_SAFE_WRITE_LIMIT`, since several other drains also run
+ * in the same mutation); the small constant covers the artifact's own row
+ * plus its views/versions/storage deletes.
+ */
+export const ARTIFACT_DRAIN_WORST_CASE_WRITES_PER_ARTIFACT = MAX_ARTIFACT_CHUNKS_PER_ARTIFACT + 100;
+export const ARTIFACT_DRAIN_WRITE_ALLOWANCE = 5_000;
+
+/**
+ * Invariant: one pass of this drain never issues more than
+ * `ARTIFACT_DRAIN_WRITE_ALLOWANCE` writes. `deleteArtifactWrite`'s per-item
+ * fan-out (chunks + views + versions + storage) is uncapped from this
+ * caller's perspective, so artifacts are drained one at a time with a
+ * budget check before each deletion; the lifecycle's `more`/reschedule loop
+ * absorbs whatever remains after the budget is exhausted.
+ */
 async function drainArtifactsByRepositoryId(ctx: MutationCtx, repositoryId: Id<"repositories">): Promise<boolean> {
+  const budget: CascadeBudget = { reads: 0, writes: 0 };
   const docs = await ctx.db
     .query("artifacts")
     .withIndex("by_repositoryId", (q) => q.eq("repositoryId", repositoryId))
     .take(CASCADE_BATCH_SIZE);
-  for (const doc of docs) await deleteArtifactWrite(ctx, doc._id);
+  budget.reads += docs.length;
+
+  for (const doc of docs) {
+    if (budget.writes + ARTIFACT_DRAIN_WORST_CASE_WRITES_PER_ARTIFACT > ARTIFACT_DRAIN_WRITE_ALLOWANCE) {
+      return true;
+    }
+    budget.writes += await deleteArtifactWrite(ctx, doc._id);
+  }
   return docs.length === CASCADE_BATCH_SIZE;
 }
 

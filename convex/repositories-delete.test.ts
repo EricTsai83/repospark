@@ -4,7 +4,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { convexTest } from "convex-test";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { deleteArtifactWrite } from "./lib/artifactWrites";
 import { CASCADE_BATCH_SIZE } from "./lib/constants";
+import {
+  ARTIFACT_DRAIN_WORST_CASE_WRITES_PER_ARTIFACT,
+  ARTIFACT_DRAIN_WRITE_ALLOWANCE,
+} from "./lib/repositoryOwnedDataAdapters";
 import { REPOSITORY_OWNED_DATA_LIFECYCLE_REGISTRY } from "./lib/repositoryOwnedDataLifecycle";
 import schema from "./schema";
 
@@ -844,5 +849,218 @@ describe("repository deletion cleanup", () => {
     expect(remainingState.repository).toBeNull();
     expect(remainingState.sandboxes).toHaveLength(0);
     expect(remainingState.jobs).toHaveLength(0);
+  });
+
+  test("deleteArtifactWrite returns the exact count of rows and storage blobs it deletes", async () => {
+    const ownerTokenIdentifier = "user|delete-artifact-write-count";
+    const t = makeHarness();
+
+    const { artifactId, htmlStorageId } = await t.run(async (ctx) => {
+      const repositoryId = await ctx.db.insert("repositories", {
+        ownerTokenIdentifier,
+        sourceHost: "github",
+        sourceUrl: "https://github.com/acme/count-artifact",
+        sourceRepoFullName: "acme/count-artifact",
+        sourceRepoOwner: "acme",
+        sourceRepoName: "count-artifact",
+        defaultBranch: "main",
+        visibility: "private",
+        accessMode: "private",
+        importStatus: "completed",
+        detectedLanguages: [],
+        packageManagers: [],
+        entrypoints: [],
+        fileCount: 0,
+        color: "blue",
+        lastAccessedAt: Date.now(),
+      });
+      const artifactId = await ctx.db.insert("artifacts", {
+        repositoryId,
+        ownerTokenIdentifier,
+        kind: "custom_document",
+        title: "Countable artifact",
+        description: "Small artifact for exact count assertions",
+        contentMarkdown: "# Countable",
+        renderFormat: "html",
+        version: 1,
+      });
+      const htmlStorageId = await ctx.storage.store(
+        new Blob(["<!doctype html><html><head></head><body>countable</body></html>"], {
+          type: "text/html",
+        }),
+      );
+      const versionId = await ctx.db.insert("artifactVersions", {
+        artifactId,
+        version: 1,
+        ownerTokenIdentifier,
+        repositoryId,
+        title: "Countable artifact",
+        description: "Small artifact for exact count assertions",
+        contentMarkdown: "# Countable",
+        renderFormat: "html",
+        htmlStorageId,
+        htmlHash: "countable-html-hash",
+        htmlByteLength: 64,
+        htmlValidationStatus: "valid",
+        createdAt: Date.now(),
+      });
+      await ctx.db.patch(artifactId, { currentVersionId: versionId });
+      for (let chunkIndex = 0; chunkIndex < 3; chunkIndex += 1) {
+        await ctx.db.insert("artifactChunks", {
+          ownerTokenIdentifier,
+          repositoryId,
+          artifactId,
+          artifactVersion: 1,
+          chunkIndex,
+          headingPath: ["Countable"],
+          startOffset: chunkIndex,
+          endOffset: chunkIndex + 1,
+          content: `chunk ${chunkIndex}`,
+        });
+      }
+      await ctx.db.insert("artifactViews", {
+        ownerTokenIdentifier,
+        repositoryId,
+        artifactId,
+        viewedAt: Date.now(),
+      });
+
+      return { artifactId, htmlStorageId };
+    });
+
+    // 3 chunks + 1 view + 1 version + 1 HTML storage blob + 1 artifact row.
+    const deletedCount = await t.run(async (ctx) => deleteArtifactWrite(ctx, artifactId));
+    expect(deletedCount).toBe(7);
+
+    const remaining = await t.run(async (ctx) => ({
+      artifact: await ctx.db.get(artifactId),
+      storage: await ctx.db.system.get(htmlStorageId),
+    }));
+    expect(remaining.artifact).toBeNull();
+    expect(remaining.storage).toBeNull();
+  });
+
+  test("drainArtifactsByRepositoryId stops within its write allowance and later passes finish the rest", async () => {
+    const ownerTokenIdentifier = "user|cascade-artifact-budget";
+    const t = makeHarness();
+    const ids = await seedRepositoryGraph(t, { ownerTokenIdentifier, sandboxStatus: "archived" });
+
+    // Compute how many extra artifacts (each with a full chunk page) it
+    // takes to guarantee the drain's per-pass write allowance is exhausted
+    // before every artifact is processed, so we can assert a single pass
+    // must leave artifacts behind.
+    const chunksPerArtifact = 200;
+    const writesPerArtifact = chunksPerArtifact + 1 /* view */ + 1 /* version */ + 1; /* artifact row */
+    const extraArtifactCount =
+      Math.ceil(ARTIFACT_DRAIN_WRITE_ALLOWANCE / writesPerArtifact) -
+      1 /* the seeded artifact already counts toward the first pass */ +
+      2; /* comfortable margin so the page also exceeds the allowance */
+
+    const extraArtifactIds = await t.run(async (ctx) => {
+      const created: Id<"artifacts">[] = [];
+      for (let artifactIndex = 0; artifactIndex < extraArtifactCount; artifactIndex += 1) {
+        const artifactId = await ctx.db.insert("artifacts", {
+          repositoryId: ids.repositoryId,
+          ownerTokenIdentifier,
+          kind: "custom_document",
+          title: `Overflow artifact ${artifactIndex}`,
+          description: "Budget overflow artifact",
+          contentMarkdown: "# Overflow",
+          renderFormat: "markdown",
+          version: 1,
+        });
+        for (let chunkIndex = 0; chunkIndex < chunksPerArtifact; chunkIndex += 1) {
+          await ctx.db.insert("artifactChunks", {
+            ownerTokenIdentifier,
+            repositoryId: ids.repositoryId,
+            artifactId,
+            artifactVersion: 1,
+            chunkIndex,
+            headingPath: ["Overflow"],
+            startOffset: chunkIndex,
+            endOffset: chunkIndex + 1,
+            content: `chunk ${chunkIndex}`,
+          });
+        }
+        await ctx.db.insert("artifactViews", {
+          ownerTokenIdentifier,
+          repositoryId: ids.repositoryId,
+          artifactId,
+          viewedAt: Date.now(),
+        });
+        created.push(artifactId);
+      }
+      return created;
+    });
+
+    // Sanity check: the worst-case-per-artifact allowance genuinely forces
+    // an early stop for this fixture, i.e. not every artifact fits in the
+    // allowance in one pass.
+    const totalArtifacts = extraArtifactIds.length + 1;
+    expect(totalArtifacts * ARTIFACT_DRAIN_WORST_CASE_WRITES_PER_ARTIFACT).toBeGreaterThan(
+      ARTIFACT_DRAIN_WRITE_ALLOWANCE,
+    );
+
+    await t.mutation(internal.repositories.cascadeDeleteRepository, { repositoryId: ids.repositoryId });
+
+    const afterFirstPass = await t.run(async (ctx) => ({
+      repository: await ctx.db.get(ids.repositoryId),
+      artifacts: await ctx.db
+        .query("artifacts")
+        .withIndex("by_repositoryId", (q) => q.eq("repositoryId", ids.repositoryId))
+        .collect(),
+    }));
+    // The repository-retirement state machine must not consider the
+    // artifact drain finished (and must not have orphaned any child rows)
+    // after a single budget-limited pass.
+    expect(afterFirstPass.repository).not.toBeNull();
+    expect(afterFirstPass.artifacts.length).toBeGreaterThan(0);
+    expect(afterFirstPass.artifacts.length).toBeLessThan(totalArtifacts);
+
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const finalState = await collectRepositoryDeleteState(t, { ownerTokenIdentifier, ...ids });
+    expect(finalState.repository).toBeNull();
+    expect(finalState.artifacts).toHaveLength(0);
+    expect(finalState.artifactChunks).toHaveLength(0);
+    expect(finalState.artifactVersions).toHaveLength(0);
+    expect(finalState.artifactViews).toHaveLength(0);
+
+    // No orphaned chunk/view rows for any of the overflow artifacts either
+    // (collectRepositoryDeleteState only checks the seeded artifact IDs).
+    const orphanCheck = await t.run(async (ctx) => {
+      const chunkCounts = await Promise.all(
+        extraArtifactIds.map((artifactId) =>
+          ctx.db
+            .query("artifactChunks")
+            .withIndex("by_artifactId_and_chunkIndex", (q) => q.eq("artifactId", artifactId))
+            .collect(),
+        ),
+      );
+      const viewCounts = await Promise.all(
+        extraArtifactIds.map((artifactId) =>
+          ctx.db
+            .query("artifactViews")
+            .withIndex("by_artifactId", (q) => q.eq("artifactId", artifactId))
+            .collect(),
+        ),
+      );
+      const versionCounts = await Promise.all(
+        extraArtifactIds.map((artifactId) =>
+          ctx.db
+            .query("artifactVersions")
+            .withIndex("by_artifactId", (q) => q.eq("artifactId", artifactId))
+            .collect(),
+        ),
+      );
+      return {
+        chunks: chunkCounts.flat(),
+        views: viewCounts.flat(),
+        versions: versionCounts.flat(),
+      };
+    });
+    expect(orphanCheck.chunks).toHaveLength(0);
+    expect(orphanCheck.views).toHaveLength(0);
+    expect(orphanCheck.versions).toHaveLength(0);
   });
 });
