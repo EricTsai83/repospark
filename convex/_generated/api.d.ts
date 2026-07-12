@@ -72,6 +72,7 @@ import type * as lib_artifactWrites from "../lib/artifactWrites.js";
 import type * as lib_auth from "../lib/auth.js";
 import type * as lib_chatEligibility from "../lib/chatEligibility.js";
 import type * as lib_chatMode from "../lib/chatMode.js";
+import type * as lib_constantTimeEqual from "../lib/constantTimeEqual.js";
 import type * as lib_constants from "../lib/constants.js";
 import type * as lib_daytonaRetry from "../lib/daytonaRetry.js";
 import type * as lib_daytonaWebhookVerification from "../lib/daytonaWebhookVerification.js";
@@ -214,6 +215,7 @@ declare const fullApi: ApiFromModules<{
   "lib/auth": typeof lib_auth;
   "lib/chatEligibility": typeof lib_chatEligibility;
   "lib/chatMode": typeof lib_chatMode;
+  "lib/constantTimeEqual": typeof lib_constantTimeEqual;
   "lib/constants": typeof lib_constants;
   "lib/daytonaRetry": typeof lib_daytonaRetry;
   "lib/daytonaWebhookVerification": typeof lib_daytonaWebhookVerification;
