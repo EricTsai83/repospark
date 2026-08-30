@@ -116,7 +116,7 @@ export function RepositoryModeSwitcher({
               transition={shouldReduceMotion ? { duration: 0 } : MORPH}
               whileTap={isAvailable && !shouldReduceMotion ? { scale: 0.96, transition: { duration: 0.1 } } : undefined}
               className={cn(
-                "relative flex h-full items-center justify-start overflow-hidden pl-[10px] outline-none",
+                "relative flex h-full items-center justify-start overflow-hidden pl-2.5 outline-none",
                 "motion-safe:transition-colors motion-safe:duration-300",
                 "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
                 isActive ? "text-foreground" : "text-muted-foreground hover:bg-background/60 hover:text-foreground",

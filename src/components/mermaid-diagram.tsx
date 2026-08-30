@@ -635,8 +635,8 @@ function MermaidRenderError({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="font-medium text-destructive">Mermaid diagram could not render.</p>
-          <p className="mt-1 break-words text-muted-foreground">{error}</p>
-          {repairError ? <p className="mt-2 break-words text-xs text-destructive">{repairError}</p> : null}
+          <p className="mt-1 wrap-break-word text-muted-foreground">{error}</p>
+          {repairError ? <p className="mt-2 wrap-break-word text-xs text-destructive">{repairError}</p> : null}
         </div>
         {onRepair ? (
           <Button
