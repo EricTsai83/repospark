@@ -19,7 +19,7 @@ export function InvitingCat() {
       {/* Scan line — desktop only */}
       <span
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 hidden h-px animate-scan-y bg-gradient-to-r from-transparent via-primary/60 to-transparent lg:block"
+        className="pointer-events-none absolute inset-x-0 top-0 hidden h-px animate-scan-y bg-linear-to-r from-transparent via-primary/60 to-transparent lg:block"
       />
 
       {/* Radial glow — desktop only */}

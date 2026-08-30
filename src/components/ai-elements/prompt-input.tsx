@@ -41,8 +41,8 @@ import {
   type ClipboardEventHandler,
   type ComponentProps,
   createContext,
-  type FormEvent,
-  type FormEventHandler,
+  type SubmitEvent,
+  type SubmitEventHandler,
   Fragment,
   type HTMLAttributes,
   type KeyboardEventHandler,
@@ -382,7 +382,7 @@ export type PromptInputProps = Omit<HTMLAttributes<HTMLFormElement>, "onSubmit" 
   maxFiles?: number;
   maxFileSize?: number; // bytes
   onError?: (err: { code: "max_files" | "max_file_size" | "accept"; message: string }) => void;
-  onSubmit: (message: PromptInputMessage, event: FormEvent<HTMLFormElement>) => void | Promise<void>;
+  onSubmit: (message: PromptInputMessage, event: SubmitEvent<HTMLFormElement>) => void | Promise<void>;
 };
 
 export const PromptInput = ({
@@ -619,7 +619,7 @@ export const PromptInput = ({
     [files, add, remove, clear, openFileDialog],
   );
 
-  const handleSubmit: FormEventHandler<HTMLFormElement> = (event) => {
+  const handleSubmit: SubmitEventHandler<HTMLFormElement> = (event) => {
     event.preventDefault();
 
     const form = event.currentTarget;

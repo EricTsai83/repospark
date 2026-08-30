@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactElement } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement, type SubmitEvent } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { useControllableState } from "@radix-ui/react-use-controllable-state";
 import {
@@ -549,7 +549,7 @@ export function ImportRepoDialog({
   );
 
   // Import by URL
-  async function handleImportByUrl(event: FormEvent<HTMLFormElement>) {
+  async function handleImportByUrl(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (importDisabledReason) {
       setImportError(importDisabledReason);
@@ -627,7 +627,7 @@ export function ImportRepoDialog({
           </Button>
         </DialogTrigger>
       )}
-      <DialogContent className="flex h-[560px] flex-col overflow-y-hidden data-[state=open]:animate-none">
+      <DialogContent className="flex h-140 flex-col overflow-y-hidden data-[state=open]:animate-none">
         <DialogHeader className="shrink-0">
           <DialogTitle>Import Repository</DialogTitle>
           {isSuspended ? (

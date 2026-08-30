@@ -144,7 +144,7 @@ export const HeroChat = forwardRef<HTMLDivElement>(function HeroChat(_props, ref
             semi-transparent card background reads as flicker. */}
         <ScrollArea
           type="hover"
-          className="h-[340px] sm:h-[400px] lg:h-[460px]"
+          className="h-85 sm:h-[400px] lg:h-[460px]"
           style={{ contain: "content", willChange: "transform" }}
         >
           <div className="flex flex-col gap-2.5 px-3 py-3 sm:gap-3 sm:px-5 sm:py-5">

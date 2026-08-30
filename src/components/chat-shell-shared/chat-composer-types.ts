@@ -1,4 +1,4 @@
-import type { FormEvent, ReactNode } from "react";
+import type { ReactNode, SubmitEvent } from "react";
 import type { GroundingAxisLike } from "@/components/grounding-toggle-bar";
 import type {
   LlmProvider,
@@ -70,7 +70,7 @@ export type ChatComposerViewModel = {
     isBlocked: boolean;
     disabledReason?: string;
     buttonState: "Send" | "Sending…" | "Syncing…";
-    onSubmit: (event: FormEvent<HTMLFormElement>, contentOverride?: string) => Promise<void>;
+    onSubmit: (event: SubmitEvent<HTMLFormElement>, contentOverride?: string) => Promise<void>;
   };
   cancel: {
     canCancel: boolean;

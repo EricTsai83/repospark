@@ -159,7 +159,7 @@ export function RepositoryModeSwitcher({
 
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute left-[30px] top-1/2 z-10 -translate-y-1/2 whitespace-nowrap text-xs font-medium"
+                className="pointer-events-none absolute left-7.5 top-1/2 z-10 -translate-y-1/2 whitespace-nowrap text-xs font-medium"
               >
                 {entry.label}
               </span>

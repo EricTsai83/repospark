@@ -463,7 +463,7 @@ export function LibraryArtifactDiffPreview({
             <span className="select-none text-right">
               {line.kind === "add" ? "+" : line.kind === "remove" ? "-" : " "}
             </span>
-            <span className="whitespace-pre-wrap break-words">{line.text || " "}</span>
+            <span className="whitespace-pre-wrap wrap-break-word">{line.text || " "}</span>
           </div>
         ))}
       </div>

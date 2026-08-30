@@ -182,7 +182,7 @@ function DocumentCard({
       aria-label={`Open ${artifact.title}`}
       className={cn(
         "group flex w-full items-start gap-3 border border-border bg-card/50 p-3 text-left transition-colors hover:border-foreground/30 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        emphasis === "recent" && "min-h-[104px]",
+        emphasis === "recent" && "min-h-26",
       )}
     >
       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-foreground transition-colors group-hover:border-foreground/30">
