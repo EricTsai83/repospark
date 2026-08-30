@@ -121,9 +121,7 @@ export function EmptyStateHero({
       {visual}
       <div className="space-y-1">
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        {description ? (
-          <p className="mx-auto max-w-[280px] text-xs leading-5 text-muted-foreground">{description}</p>
-        ) : null}
+        {description ? <p className="mx-auto max-w-70 text-xs leading-5 text-muted-foreground">{description}</p> : null}
       </div>
     </div>
   );

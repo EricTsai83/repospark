@@ -244,7 +244,7 @@ function TopBarTitleArea({
  * was always there.
  */
 function RepoStatusIndicatorSlot({ children }: { children?: ReactNode }) {
-  return <div className="flex min-w-[88px] shrink-0 items-center">{children}</div>;
+  return <div className="flex min-w-22 shrink-0 items-center">{children}</div>;
 }
 
 function TopBarSwapRepositorySlot({

@@ -86,7 +86,7 @@ function ModePanel({ mode, index }: { mode: Mode; index: number }) {
           <ul className="flex flex-col gap-2">
             {mode.scenarios.map((scenario) => (
               <li key={scenario} className="flex items-start gap-2.5 text-[13.5px] text-foreground/90">
-                <span aria-hidden className="mt-[7px] size-1 shrink-0 bg-muted-foreground/60" />
+                <span aria-hidden className="mt-1.75 size-1 shrink-0 bg-muted-foreground/60" />
                 <span className="min-w-0 text-pretty leading-relaxed">{scenario}</span>
               </li>
             ))}

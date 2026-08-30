@@ -86,7 +86,7 @@ function CatSvg() {
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 120 110"
         overflow="visible"
-        className="h-14 w-16 text-muted-foreground lg:h-[88px] lg:w-[96px]"
+        className="h-14 w-16 text-muted-foreground lg:h-22 lg:w-24"
         fill="none"
       >
         {/* ---- Head group — gentle side-to-side tilt ---- */}

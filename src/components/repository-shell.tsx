@@ -292,7 +292,7 @@ function ImportFailedBanner({
               Error details
             </AccordionTrigger>
             <AccordionContent className="pt-1.5 pb-0">
-              <pre className="max-h-48 overflow-auto rounded-sm border border-destructive/20 bg-destructive/10 p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap break-words text-destructive">
+              <pre className="max-h-48 overflow-auto rounded-sm border border-destructive/20 bg-destructive/10 p-2 font-mono text-[11px] leading-snug whitespace-pre-wrap wrap-break-word text-destructive">
                 {errorMessage}
               </pre>
             </AccordionContent>

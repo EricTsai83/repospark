@@ -1,4 +1,4 @@
-import { Check, Copy } from "@phosphor-icons/react";
+import { CheckIcon, CopyIcon } from "@phosphor-icons/react";
 
 import { Button } from "@/components/ui/button";
 import { useClipboard } from "@/hooks/use-clipboard";
@@ -125,12 +125,12 @@ function CopyAllButton() {
     >
       {copied ? (
         <>
-          <Check weight="bold" className="size-3 text-emerald-500" />
+          <CheckIcon weight="bold" className="size-3 text-emerald-500" />
           <span aria-hidden>copied</span>
         </>
       ) : (
         <>
-          <Copy weight="bold" className="size-3" />
+          <CopyIcon weight="bold" className="size-3" />
           <span aria-hidden>copy all</span>
         </>
       )}

@@ -150,11 +150,11 @@ function PasteBlock() {
                 content-box` is set in CSS so the 1px caret border
                 doesn't eat into the text's content area when width
                 reaches its 7ch target.) */}
-            <div className="relative h-3.5 min-w-0 flex-1 overflow-hidden font-mono text-[10.5px] leading-[14px] sm:text-[11px]">
+            <div className="relative h-3.5 min-w-0 flex-1 overflow-hidden font-mono text-[10.5px] leading-3.5 sm:text-[11px]">
               <span className="animate-narrative-paste-placeholder absolute inset-0 truncate text-muted-foreground/55">
                 search repo name…
               </span>
-              <span className="animate-narrative-paste-typed absolute left-0 top-0 leading-[14px] text-foreground">
+              <span className="animate-narrative-paste-typed absolute left-0 top-0 leading-3.5 text-foreground">
                 systify
               </span>
             </div>
@@ -299,7 +299,7 @@ function IndexBlock() {
       {INDEX_FILES.map((file, i) => (
         <div
           key={`${file.depth}-${file.name}`}
-          className="relative flex items-center gap-2 px-1.5 py-[3px] font-mono text-[10px] sm:text-[10.5px]"
+          className="relative flex items-center gap-2 px-1.5 py-0.75 font-mono text-[10px] sm:text-[10.5px]"
         >
           {/* Per-row scan highlight — fades in/out as the scan passes. */}
           <span
@@ -396,8 +396,8 @@ function CiteBlock() {
       <div className="flex flex-col gap-1.5 border border-border bg-background/80 px-2.5 py-2">
         <p className="font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground/70">assistant</p>
         <div className="flex flex-col gap-1">
-          <span aria-hidden className="block h-[3px] w-[88%] bg-foreground/20" />
-          <span aria-hidden className="block h-[3px] w-[64%] bg-foreground/20" />
+          <span aria-hidden className="block h-0.75 w-[88%] bg-foreground/20" />
+          <span aria-hidden className="block h-0.75 w-[64%] bg-foreground/20" />
         </div>
         <span className="animate-narrative-cite-file mt-0.5 inline-flex w-fit items-center gap-1 border border-primary/40 bg-primary/10 px-1.5 py-0.5 font-mono text-[9.5px] tracking-[0.04em] text-primary">
           <FileIcon weight="duotone" aria-hidden className="size-2.5 shrink-0" />
@@ -410,13 +410,13 @@ function CiteBlock() {
           being browsed from top to bottom; once it settles, the
           highlighter sweep paints line 42. */}
       <div className="relative overflow-hidden border border-border bg-background/80 px-2 py-2">
-        <div className="animate-narrative-cite-scroll flex flex-col gap-[3px] font-mono text-[10px] leading-[14px] will-change-transform">
+        <div className="animate-narrative-cite-scroll flex flex-col gap-0.75 font-mono text-[10px] leading-3.5 will-change-transform">
           {CITE_LINES.map(({ n, w, target }) => (
             <div key={n} className="relative flex items-center gap-2 py-px">
               <span className="w-4 shrink-0 text-right text-muted-foreground/45 tabular-nums">{n}</span>
               <span
                 aria-hidden
-                className={`block h-[3px] ${target ? "bg-foreground/55" : "bg-foreground/20"}`}
+                className={`block h-0.75 ${target ? "bg-foreground/55" : "bg-foreground/20"}`}
                 style={{ width: w }}
               />
               {/* Highlighter sweep — only on the cited line. Anchored
@@ -425,7 +425,7 @@ function CiteBlock() {
               {target ? (
                 <span
                   aria-hidden
-                  className="animate-narrative-cite-sweep pointer-events-none absolute inset-y-px left-[24px] right-1 bg-primary/30"
+                  className="animate-narrative-cite-sweep pointer-events-none absolute inset-y-px left-6 right-1 bg-primary/30"
                 />
               ) : null}
             </div>
@@ -444,7 +444,7 @@ function CiteBlock() {
  * `CITE_LINES.length`, retune the keyframe's `translateY` value
  * (currently `-100px`, calibrated for the target at index 8 of 12
  * rows at the row pitch implied by `gap-[3px]`, `py-[1px]`, and
- * `leading-[14px]` — about 19 px per row). The list starts well
+ * `leading-3.5` — about 19 px per row). The list starts well
  * before line 42 so the initial frame shows "the top of the file"
  * and the scroll reads as a downward skim.
  */
